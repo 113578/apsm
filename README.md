@@ -13,5 +13,5 @@
 ### Участники:
 - Артём Боярских — @boyartskikh, 113578;
 - Сергей Запашний — @rergogrey, rergogrey;
-- Егор Гора — @Gera0322, geragora;
+- Егор Горбунов — @Gera0322, geragora;
 - Дмитрий Васильков — @dsvasilkov, dsvasilkov.
