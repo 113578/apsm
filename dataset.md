@@ -5,7 +5,7 @@
 
 Код для сбора данных:
 - Новости: apsm/notebooks/news.ipynb
-- Валюты, акции: apsm/notebooks/...
+- Валюты, акции: apsm/notebooks/quotes.ipynb
 
 ## Финансовые события
 investingEconomicCalendarNews.csv - в данном файле представлены финансовые события за последний год, полученные от Investing.com с помощью библиотеки investpy. 
@@ -47,8 +47,8 @@ AAPLNews.csv - в данном файле находятся новости Appl
 - ticker_sentiment_score: Показатель настроения, относящийся к конкретному тикеру.
 - ticker_sentiment_label: Категориальное обозначение настроения, относящееся к тикеру.
 
-## Валюты
-...
+## Валюты  
+Файл currency_raw.parquet содержит котировки валют, выраженные в долларах США. Данные получены с сайта finance.yahoo.com с помощью библиотеки yfinance. Список названий валют был спарсен с сайта  https://en.wikipedia.org/wiki/List_of_circulating_currencies. 
 
-## Акции
-...
+## Акции  
+Файл stock_raw.parquet содержит котировки акций, полученные с сайта finance.yahoo.com с помощью библиотеки yfinance. Список названий акций был взят из библиотеки financedatabase. 
