@@ -1,7 +1,4 @@
-import os
-import sys
 import uvicorn
-import streamlit as st
 
 from utils.utils import create_project_path
 from fastapi import FastAPI
