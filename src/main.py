@@ -1,18 +1,20 @@
 import os
+import sys
 import uvicorn
+import streamlit as st
 
+from utils.utils import create_project_path
 from fastapi import FastAPI
 from api.file_manager import file_manager_router
 from api.model import model_router
 
-from dotenv import load_dotenv
-load_dotenv()
+
+create_project_path()
 
 
 app = FastAPI(
     title='APSM',
 )
-
 app.include_router(router=file_manager_router)
 app.include_router(router=model_router)
 

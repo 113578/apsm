@@ -12,4 +12,3 @@ class HoltWintersPredictRequest(BaseModel):
     n_periods: int
     trend: Optional[str] = None  # 'additive' или 'multiplicative'.
     seasonal: Optional[str] = None  # 'additive', 'multiplicative', или None.
-    
