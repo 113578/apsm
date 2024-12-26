@@ -1,6 +1,6 @@
 import pandas as pd
 
-from typing_extensions import Annotated
+from typing_extensions import Annotated, Dict
 from fastapi import FastAPI, APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from pmdarima import auto_arima
@@ -14,8 +14,11 @@ from config.dataclasses import (
 model_router = APIRouter()
 
 
-@model_router.post('/predict/auto_arima', response_model=dict)
-async def predict_auto_arima(request: AutoARIMAPredictRequest) -> dict:
+@model_router.post(
+    '/predict/auto_arima',
+    response_model=Dict[str, List[float]]
+)
+async def predict_auto_arima(request: AutoARIMAPredictRequest):
     try:
         logger.info('Received request for auto_arima prediction')
 
@@ -49,8 +52,11 @@ async def predict_auto_arima(request: AutoARIMAPredictRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@model_router.post('/predict/holt_winters', response_model=dict)
-async def predict_holt_winters(request: HoltWintersPredictRequest) -> dict:
+@model_router.post(
+    '/predict/holt_winters',
+    response_model=Dict[str, List[float]]
+)
+async def predict_holt_winters(request: HoltWintersPredictRequest):
     try:
         logger.info('Received request for Holt-Winters prediction')
 
