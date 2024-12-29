@@ -1,0 +1,30 @@
+version: 'latest'
+
+services:
+  base:
+    build:
+      context: .
+      dockerfile: ./apsm/Dockerfile
+    image: base
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: ./apsm/app/Dockerfile
+    depends_on:
+      - base
+    ports:
+      - '8000:8000'
+    environment:
+      - PYTHONPATH=/usr/src/app
+      
+  streamlit:
+    build:
+      context: .
+      dockerfile: ./apsm/streamlit_app/Dockerfile
+    depends_on:
+      - base
+    ports:
+      - '8501:8501'
+    environment:
+      - PYTHONPATH=/usr/src/app
