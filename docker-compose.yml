@@ -5,14 +5,14 @@ services:
         build:
             context: .
             dockerfile: ./apsm/Dockerfile
-        image: base
+        image: base:1
 
     fastapi:
         build:
             context: .
             dockerfile: ./apsm/app/Dockerfile
         depends_on:
-            - base
+            - base:1
         ports:
             - '8000:8000'
         environment:
@@ -23,7 +23,7 @@ services:
             context: .
             dockerfile: ./apsm/streamlit_app/Dockerfile
         depends_on:
-            - base
+            - base:1
         ports:
             - '8501:8501'
         environment:

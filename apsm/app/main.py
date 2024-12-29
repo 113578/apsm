@@ -9,7 +9,6 @@ from schemas import StatusResponse
 app = FastAPI(
     title='APSM',
 )
-# app.include_router(router=file_manager_router)
 app.include_router(router=model_router)
 
 

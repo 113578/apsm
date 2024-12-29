@@ -24,7 +24,7 @@ model_router = APIRouter()
 
 logger = setup_logger(
     name='model',
-    log_file=os.getenv('PYTHONPATH') + '/logs/model_api.log'
+    log_file=os.getenv('PYTHONPATH') + '/logs/api.log'
 )
 
 models = {}
