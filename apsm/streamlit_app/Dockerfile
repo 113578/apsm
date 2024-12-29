@@ -1,4 +1,4 @@
-FROM base:1
+FROM base
 
 WORKDIR /usr/src/app
 
