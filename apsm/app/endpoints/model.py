@@ -1,99 +1,167 @@
 import os
+import pickle as pkl
 import pandas as pd
+import numpy as np
 
 from typing_extensions import Annotated
+from http import HTTPStatus
 from fastapi import FastAPI, APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from pmdarima import auto_arima
 from apsm.app.schemas import (
-    AutoARIMAPredictRequest,
-    HoltWintersPredictRequest,
-    Response
+    ModelConfig,
+    FitRequest,
+    FitResponse,
+    PredictRequest,
+    PredictResponse,
+    ModelListResponse,
+    RemoveResponse
 )
 from apsm.utils import setup_logger
 
 
 model_router = APIRouter()
+
 logger = setup_logger(
     name='model',
-    log_file=os.getenv('PYTHONPATH') + '/logs/model.log'
+    log_file=os.getenv('PYTHONPATH') + '/logs/model_api.log'
 )
+
+models = {}
 
 
 @model_router.post(
-    '/predict/auto_arima',
-    response_model=Response
+    '/fit',
+    response_model=FitResponse,
+    status_code=HTTPStatus.CREATED
 )
-async def predict_auto_arima(request: AutoARIMAPredictRequest):
-    try:
-        logger.info('Received request for auto_arima prediction')
+async def fit(
+    request: Annotated[FitRequest, '...']
+) -> FitResponse:
+    global models
 
-        X_train = request.data
-        n_periods = request.n_periods
+    model_id = request.config.id
+    model_type = request.config.ml_model_type
+    data = request.data
+    config = request.config.hyperparameters or {}
 
-        model = auto_arima(
-            X_train,
-            start_p=1,
-            start_q=1,
-            test='adf',
-            max_p=3,
-            max_q=3,
-            seasonal=True,
-            d=None,
-            trace=False,
-            error_action='ignore',
-            suppress_warnings=True,
-            stepwise=True
+    if model_id in models:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Модель '{model_id}' уже существует."
         )
 
-        forecast = model.predict(n_periods=n_periods)
-
-        logger.info('Successfully generated auto_arima forecast')
-
-        return {'forecast': forecast.tolist()}
-
-    except Exception as e:
-        logger.error(f'Error in auto_arima prediction: {str(e)}')
-
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@model_router.post(
-    '/predict/holt_winters',
-    response_model=Response
-)
-async def predict_holt_winters(request: HoltWintersPredictRequest):
     try:
-        logger.info('Received request for Holt-Winters prediction')
+        if model_type == 'auto_arima':
+            model = auto_arima(data)
 
-        data = request.data
-        n_periods = request.n_periods
-        trend = request.trend
-        seasonal = request.seasonal
+        elif model_type == 'holt_winters':
+            required_params = ['trend', 'seasonal', 'seasonal_periods']
 
-        data_series = pd.Series(
-            data=data,
-            index=pd.date_range(
-                start='2023-01-01',
-                periods=len(data),
-                freq='D'
+            for param in required_params:
+                if param not in config:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Параметр '{param}' обязателен."
+                    )
+
+            data_series = pd.Series(
+                data=data,
+                index=pd.date_range(
+                    start=config.get('start_date', '2023-01-01'),
+                    periods=len(data),
+                    freq=config.get('freq', 'D')
+                )
             )
+            model = ExponentialSmoothing(
+                data_series,
+                trend=config['trend'],
+                seasonal=config['seasonal'],
+                seasonal_periods=config['seasonal_periods']
+            )
+            model = model.fit()
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail='Неподдерживаемый тип модели.'
+            )
+
+        models[model_id] = pickle.dumps(model)
+
+        return FitResponse(
+            message=f"Модель '{model_id}' успешно обучена и сохранена."
         )
 
-        model = ExponentialSmoothing(
-            endog=data_series,
-            trend=trend,
-            seasonal=seasonal,
-            freq='D'
-        ).fit()
+    except Exception as e:
+        logger.error(f'Ошибка: {str(e)}')
 
-        forecast = model.forecast(steps=n_periods)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка обучения модели '{model_id}': {str(e)}"
+        )
 
-        logger.info('Successfully generated Holt-Winters forecast')
 
-        return {'forecast': forecast.tolist()}
+@model_router.post(
+    '/predict',
+    response_model=PredictResponse,
+    status_code=HTTPStatus.OK
+)
+async def predict_model(
+    request: Annotated[PredictRequest, '']
+) -> PredictResponse:
+    global models
+
+    model_id = request.id
+    n_periods = request.n_periods
+
+    if model_id not in models:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Модель '{model_id}' не найдена."
+        )
+
+    try:
+        model = pickle.loads(models[model_id])
+
+        if hasattr(model, 'predict'):
+            forecast = model.predict(n_periods=n_periods)
+        elif hasattr(model, 'forecast'):
+            forecast = model.forecast(steps=n_periods)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail='Неподдерживаемый тип модели.'
+            )
+
+        return PredictResponse(forecast=forecast.tolist())
 
     except Exception as e:
-        logger.error(f'Error in Holt-Winters prediction: {str(e)}')
+        logger.error(f"Ошибка предсказания: {str(e)}")
 
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ошибка предсказания: {str(e)}"
+        )
+
+
+@model_router.get(
+    '/list_models',
+    response_model=ModelListResponse,
+    status_code=HTTPStatus.OK
+)
+async def list_models() -> ModelListResponse:
+    model_list = [{'id': model_id} for model_id in models.keys()]
+
+    return ModelListResponse(models=model_list)
+
+
+@model_router.delete(
+    '/remove_all',
+    response_model=RemoveResponse,
+)
+async def remove_all_models() -> RemoveResponse:
+    global models
+    models.clear()
+
+    return RemoveResponse(message='Все модели успешно удалены.')

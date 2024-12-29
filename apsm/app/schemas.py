@@ -1,22 +1,49 @@
 from pydantic import BaseModel
-from typing import List, Dict, Optional, Literal
+from typing import (
+    List,
+    Dict,
+    Optional,
+    Literal,
+    Union
+)
 
 
-class AutoARIMAPredictRequest(BaseModel):
+class ModelConfig(BaseModel):
+    id: str
+    ml_model_type: Literal[
+        'auto_arima', 'holt_winters'
+    ]
+    hyperparameters: Optional[
+        Dict[str, Union[str, bool, int, float]]
+    ] = None
+
+
+class FitRequest(BaseModel):
     data: List[float]
+    n_periods: int
+    config: ModelConfig
+
+
+class FitResponse(BaseModel):
+    message: str
+
+
+class PredictRequest(BaseModel):
+    id: str
     n_periods: int
 
 
-class HoltWintersPredictRequest(BaseModel):
-    data: List[float]
-    n_periods: int
-    trend: Optional[
-        Literal['additive', 'multiplicative']
-    ] = None
-    seasonal: Optional[
-        Literal['additive', 'multiplicative']
-    ] = None
+class PredictResponse(BaseModel):
+    forecast: List[float]
 
 
-class Response(BaseModel):
-    response: Dict[str, List[float]]
+class ModelListResponse(BaseModel):
+    models: List[Dict[str, str]]
+
+
+class RemoveResponse(BaseModel):
+    message: str
+
+
+class StatusResponse(BaseModel):
+    response: Dict[str, str]

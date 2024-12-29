@@ -1,14 +1,30 @@
 import uvicorn
 
 from fastapi import FastAPI
+from http import HTTPStatus
 from endpoints import *
+from schemas import StatusResponse
 
 
 app = FastAPI(
     title='APSM',
 )
-app.include_router(router=file_manager_router)
+# app.include_router(router=file_manager_router)
 app.include_router(router=model_router)
+
+
+@app.get(
+    '/',
+    response_model=StatusResponse,
+    status_code=HTTPStatus.OK
+)
+async def root() -> StatusResponse:
+    return StatusResponse(
+        response={
+            'message':
+            'FastAPI работает! Используйте /docs для доступа к API.'
+        }
+    )
 
 
 if __name__ == '__main__':

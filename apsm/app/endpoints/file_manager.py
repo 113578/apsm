@@ -11,7 +11,7 @@ from apsm.utils import setup_logger
 file_manager_router = APIRouter()
 logger = setup_logger(
     name='file_manager',
-    log_file=os.getenv('PYTHONPATH') + '/logs/file_manager.log'
+    log_file=os.getenv('PYTHONPATH') + '/logs/file_manager_api.log'
 )
 
 
