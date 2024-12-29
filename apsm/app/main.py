@@ -1,12 +1,7 @@
 import uvicorn
 
-from utils.utils import create_project_path
 from fastapi import FastAPI
-from api.file_manager import file_manager_router
-from api.model import model_router
-
-
-create_project_path()
+from endpoints import *
 
 
 app = FastAPI(

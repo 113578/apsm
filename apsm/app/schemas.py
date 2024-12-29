@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Literal
 
 
 class AutoARIMAPredictRequest(BaseModel):
@@ -10,8 +10,12 @@ class AutoARIMAPredictRequest(BaseModel):
 class HoltWintersPredictRequest(BaseModel):
     data: List[float]
     n_periods: int
-    trend: Optional[str] = None  # 'additive' или 'multiplicative'.
-    seasonal: Optional[str] = None  # 'additive', 'multiplicative', или None.
+    trend: Optional[
+        Literal['additive', 'multiplicative']
+    ] = None
+    seasonal: Optional[
+        Literal['additive', 'multiplicative']
+    ] = None
 
 
 class Response(BaseModel):

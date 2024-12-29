@@ -2,16 +2,21 @@ import os
 import aiofiles
 
 from io import BytesIO
+from typing import Dict
 from fastapi import FastAPI, APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
-from config.logging.logger import logger
+from apsm.utils import setup_logger
 
 
 file_manager_router = APIRouter()
+logger = setup_logger(
+    name='file_manager',
+    log_file=os.getenv('PYTHONPATH') + '/logs/file_manager.log'
+)
 
 
 @file_manager_router.post('/upload-file')
-async def upload_csv(file: UploadFile = File(...)) -> dict[str, str]:
+async def upload_csv(file: UploadFile = File(...)) -> Dict[str, str]:
     try:
         filename = file.filename
         data = file.file.read().decode('utf-8')
@@ -33,7 +38,7 @@ async def upload_csv(file: UploadFile = File(...)) -> dict[str, str]:
 
 
 @file_manager_router.delete('/delete-file')
-async def delete_file(file_name: str) -> dict[str, str]:
+async def delete_file(file_name: str) -> Dict[str, str]:
     try:
         os.remove(f'uploads/{file_name}')
         logger.info(f'Файл удален: {file_name}')

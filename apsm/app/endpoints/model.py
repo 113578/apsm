@@ -1,18 +1,23 @@
+import os
 import pandas as pd
 
 from typing_extensions import Annotated
 from fastapi import FastAPI, APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from pmdarima import auto_arima
-from config.logging.logger import logger
-from config.dataclasses import (
+from apsm.app.schemas import (
     AutoARIMAPredictRequest,
     HoltWintersPredictRequest,
     Response
 )
+from apsm.utils import setup_logger
 
 
 model_router = APIRouter()
+logger = setup_logger(
+    name='model',
+    log_file=os.getenv('PYTHONPATH') + '/logs/model.log'
+)
 
 
 @model_router.post(
