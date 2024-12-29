@@ -1,6 +1,6 @@
 import streamlit as st
 
-from functions import create_template
+from components import create_template
 
 
 is_uploaded = True
