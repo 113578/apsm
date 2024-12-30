@@ -8,15 +8,7 @@ from http import HTTPStatus
 from fastapi import FastAPI, APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from pmdarima import auto_arima
-from apsm.app.schemas import (
-    ModelConfig,
-    FitRequest,
-    FitResponse,
-    PredictRequest,
-    PredictResponse,
-    ModelListResponse,
-    RemoveResponse
-)
+from apsm.app.schemas import *
 from apsm.utils import setup_logger
 
 
@@ -28,6 +20,7 @@ logger = setup_logger(
 )
 
 models = {}
+active_model_id = ''
 
 
 @model_router.post(
@@ -107,7 +100,7 @@ async def fit(
     response_model=PredictResponse,
     status_code=HTTPStatus.OK
 )
-async def predict_model(
+async def predict(
     request: Annotated[PredictRequest, '']
 ) -> PredictResponse:
     global models
@@ -146,21 +139,46 @@ async def predict_model(
 
 
 @model_router.get(
-    '/list_models',
+    '/models',
     response_model=ModelListResponse,
     status_code=HTTPStatus.OK
 )
-async def list_models() -> ModelListResponse:
+async def models() -> ModelListResponse:
     model_list = [{'id': model_id} for model_id in models.keys()]
 
     return ModelListResponse(models=model_list)
+
+
+@app.post(
+    '/api/v1/models/set',
+    response_model=LoadResponse,
+    status_code=HTTPStatus.OK
+)
+async def set_active_model(
+    request: Annotated[LoadRequest, '...']
+) -> LoadResponse:
+    global active_model_id
+
+    model_id = request.id
+
+    if model_id not in models:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Модель '{model_id}' не найдена."
+        )
+
+    active_model_id = model_id
+
+    return LoadResponse(
+        message=f"Модель '{model_id}' установлена как активная."
+    )
 
 
 @model_router.delete(
     '/remove_all',
     response_model=RemoveResponse,
 )
-async def remove_all_models() -> RemoveResponse:
+async def remove_all() -> RemoveResponse:
     global models
     models.clear()
 

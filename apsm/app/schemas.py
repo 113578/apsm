@@ -47,3 +47,11 @@ class RemoveResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     response: Dict[str, str]
+
+
+class LoadRequest(BaseModel):
+    id: str
+
+
+class LoadResponse(BaseModel):
+    message: str
