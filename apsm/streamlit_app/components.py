@@ -12,7 +12,7 @@ from typing import Literal
 from pygments.lexers import go
 
 
-#from apsm.utils import setup_logger
+# from apsm.utils import setup_logger
 
 
 # logger = setup_logger(
@@ -23,6 +23,7 @@ from pygments.lexers import go
 class ModelType(str, Enum):
     auto_arima = "auto_arima"
     holt_winters = "holt_winters"
+
 
 base_url = 'http://127.0.0.1:8000'
 
@@ -71,7 +72,7 @@ def get_analytics(df, template_type, selected_option):
 
 @exception_handler
 async def train_model(df, model_id, selected_model,
-                          trend, seasonal, seasonal_periods):
+                      trend, seasonal, seasonal_periods):
     url = f'{base_url}/fit'
     payload = {
         'data': df.values.tolist(),
@@ -99,12 +100,9 @@ async def train_model(df, model_id, selected_model,
             st.error(f'Ошибка при отправке запроса: {error_message}')
 
 
-
-
 @exception_handler
 def compare_experiments():
-
-   pass
+    pass
 
 
 @exception_handler
@@ -146,6 +144,7 @@ async def inference_model(df, ticker, period):
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
 
+
 @async_exception_handler
 async def get_list_models():
     url = f'{base_url}/list'
@@ -162,6 +161,7 @@ async def get_list_models():
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
 
+
 @async_exception_handler
 async def delete_models():
     url = f'{base_url}/remove_all'
@@ -170,11 +170,10 @@ async def delete_models():
         response = await client.get(url)
 
         if response.status_code == 200:
-            st.write( response.json()["message"])
+            st.write(response.json()["message"])
         else:
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
-
 
 
 @exception_handler
@@ -204,6 +203,7 @@ def upload_file(template_type):
         return cleaned_df, True
     return None, False
 
+
 @exception_handler
 def select_ticker(df, template_type):
     st.sidebar.header('Выбор тикера')
@@ -211,23 +211,23 @@ def select_ticker(df, template_type):
     search_term = st.sidebar.text_input(
         'Поиск:',
         placeholder=f'Введите тикер {
-        'валютной пары' if template_type == 'Котировки валют'
-        else 'акции'}')
+            'валютной пары' if template_type == 'Котировки валют'
+            else 'акции'}')
 
     filtered_options = [
         option for option in options if search_term.lower() in option.lower()
     ]
 
     selected_option = st.sidebar.selectbox(
-        f'Выберите '
-        f'{'валютную пару' if template_type == 'Котировки валют' else 'акцию'}',
-        filtered_options
+        f'Выберите {'валютную пару' if template_type == 'Котировки валют'
+                    else 'акцию'}', filtered_options
     )
 
     if selected_option:
         st.write(f'Ваш выбор: {selected_option}')
         return selected_option
     return None
+
 
 @async_exception_handler
 async def set_active_model(model_id):
@@ -246,13 +246,13 @@ async def set_active_model(model_id):
 
 
 @async_exception_handler
-async def fit_or_predict(template_type, df, ticker = None):
+async def fit_or_predict(template_type, df, ticker=None):
     if template_type == "fit":
         st.header('Обучение модели 🔧')
         selected_model = st.selectbox(f'Выберите модель:',
-                                              ModelType)
+                                      ModelType)
         model_id = st.text_input('Id:',
-                              placeholder='Введите id модели:')
+                                 placeholder='Введите id модели:')
 
         seasonal_periods = None
         selected_period, selected_trend, selected_seasonal = None, None, None
@@ -269,12 +269,14 @@ async def fit_or_predict(template_type, df, ticker = None):
                 index=None,
             )
             seasonal_periods = st.text_input('Сезонный период:',
-                                                     placeholder='Введите длину сезонного цикла:')
+                                             placeholder='Введите длину'
+                                                         ' сезонного цикла:')
         if model_id:
-             if st.button('Обучить модель!'):
-                 await train_model(df, model_id, selected_model,
-                           selected_trend, selected_seasonal, seasonal_periods
-                 )
+            if st.button('Обучить модель!'):
+                await train_model(df, model_id, selected_model,
+                                  selected_trend, selected_seasonal,
+                                  seasonal_periods
+                                  )
     else:
         st.header('Инференс модели 🔥')
         list_models = await get_list_models()
@@ -292,11 +294,9 @@ async def fit_or_predict(template_type, df, ticker = None):
                 await inference_model(df, ticker, int(selected_period))
 
 
-
-
 @exception_handler
 async def create_template(
-    is_uploaded: bool, template_type: Literal['Котировки валют', 'Акции']
+        is_uploaded: bool, template_type: Literal['Котировки валют', 'Акции']
 ) -> None:
     '''
     Создание шаблона приложения.
@@ -318,8 +318,8 @@ async def create_template(
         if selected_ticker:
             st.header('Аналитика файла 📊')
             analytics = get_analytics(df, template_type, selected_ticker)
-
-            tab_fit, tab_predict = st.tabs(tabs=['Обучение', 'Прогнозирование'])
+            tab_fit, tab_predict = st.tabs(tabs=['Обучение',
+                                                 'Прогнозирование'])
 
             with tab_fit:
                 await fit_or_predict(
@@ -333,4 +333,3 @@ async def create_template(
                     df=df,
                     ticker=selected_ticker
                 )
-

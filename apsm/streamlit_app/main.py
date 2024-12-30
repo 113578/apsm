@@ -3,6 +3,8 @@ import asyncio
 import streamlit as st
 
 from components import create_template
+
+
 async def main():
     is_uploaded = True
 
@@ -18,10 +20,11 @@ async def main():
             template_type='Котировки валют'
         )
 
-
     with tab_stocks:
         await create_template(
             is_uploaded=is_uploaded,
             template_type='Акции'
         )
+
+
 asyncio.run(main())

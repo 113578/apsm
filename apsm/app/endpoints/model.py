@@ -11,7 +11,6 @@ from pmdarima import auto_arima, StepwiseContext
 from apsm.app.schemas import *
 from apsm.utils import setup_logger
 
-
 model_router = APIRouter()
 
 logger = setup_logger(
@@ -21,13 +20,14 @@ logger = setup_logger(
 
 model = None
 
+
 @model_router.post(
     '/fit',
     response_model=FitResponse,
     status_code=HTTPStatus.CREATED
 )
 async def fit(
-    request: Annotated[FitRequest, '...']
+        request: Annotated[FitRequest, '...']
 ) -> FitResponse:
     global model
 
@@ -93,8 +93,10 @@ async def fit(
 
 
 def get_model_path(model_id: str) -> Optional[str]:
-    auto_arima_path = os.path.join("models", "auto_arima", model_id + ".joblib")
-    holt_winters_path = os.path.join("models", "holt_winters", model_id + ".joblib")
+    auto_arima_path = os.path.join("models", "auto_arima",
+                                   model_id + ".joblib")
+    holt_winters_path = os.path.join("models", "holt_winters",
+                                     model_id + ".joblib")
     if os.path.exists(auto_arima_path):
         return auto_arima_path
     if os.path.exists(holt_winters_path):
@@ -108,7 +110,7 @@ def get_model_path(model_id: str) -> Optional[str]:
     status_code=HTTPStatus.OK
 )
 async def predict_model(
-    request: Annotated[PredictRequest, '']
+        request: Annotated[PredictRequest, '']
 ) -> PredictResponse:
     global model
 
@@ -146,15 +148,16 @@ async def predict_model(
     status_code=HTTPStatus.OK
 )
 async def list_models() -> ModelListResponse:
-    models_list = [{"id": model_id.removesuffix(".joblib"), "type": model_type} for model_type in ModelType if
-                os.path.exists(f"models/{model_type.value}") for model_id in os.listdir(f"models/{model_type.value}")]
+    models_list = [{"id": model_id.removesuffix(".joblib"),
+                    "type": model_type} for model_type in ModelType if
+                   os.path.exists(f"models/{model_type.value}") for model_id in
+                   os.listdir(f"models/{model_type.value}")]
     return ModelListResponse(models=models_list)
-
 
 
 @model_router.post(
     '/set',
-    response_model = SetResponse,
+    response_model=SetResponse,
 )
 async def set_active_model(
         request: Annotated[SetRequest, '']
@@ -183,5 +186,5 @@ async def remove_all() -> RemoveResponse:
     global model
     model = None
     if os.path.exists("models"):
-       shutil.rmtree("models")
+        shutil.rmtree("models")
     return RemoveResponse(message="Все модели удалены!")
