@@ -1,19 +1,30 @@
 import asyncio
-import aiohttp
+import os
+from enum import Enum
+from http import HTTPStatus
+
+import httpx
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 
 from typing import Literal
 from pygments.lexers import go
-from apsm.utils import setup_logger
 
 
-logger = setup_logger(
-    name='streamlit',
-    log_file=os.getenv('PYTHONPATH') + '/logs/streamlit.log'
-)
-base_url = 'http://0.0.0.0:8000'
+#from apsm.utils import setup_logger
+
+
+# logger = setup_logger(
+#     name='streamlit',
+#     log_file=os.getenv('PYTHONPATH') + '/logs/streamlit.log'
+# )
+
+class ModelType(str, Enum):
+    auto_arima = "auto_arima"
+    holt_winters = "holt_winters"
+
+base_url = 'http://127.0.0.1:8000'
 
 
 def exception_handler(func):
@@ -54,50 +65,50 @@ def get_analytics(df, template_type, selected_option):
         Кадр данных, содержащий аналитику.
     '''
 
-    fig = get_chart(df, selected_option)
+    fig = get_figure(df, selected_option)
     st.plotly_chart(fig)
 
 
 @exception_handler
-def train_model():
-    pass
+async def train_model(df, model_id, selected_model,
+                          trend, seasonal, seasonal_periods):
+    url = f'{base_url}/fit'
+    payload = {
+        'data': df.values.tolist(),
+        'config': {
+            'id': model_id,
+            'ml_model_type': selected_model
+        }
+    }
+
+    if selected_model == 'holt_winters':
+        payload["config"]['hyperparameters'] = {
+            'trend': trend,
+            'seasonal': seasonal,
+            'seasonal_periods': int(seasonal_periods)
+        }
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload)
+
+        if response.status_code == 201:
+            message = response.json()["message"]
+            st.write(message)
+        else:
+            error_message = response.text
+            st.error(f'Ошибка при отправке запроса: {error_message}')
+
+
 
 
 @exception_handler
-def compare_experiments(selected_experiments):
-    '''
-    Сравнение нескольких экспериментов с отображением кривых обучения.
+def compare_experiments():
 
-    Parameters
-    ----------
-    selected_experiments : list
-        Список выбранных экспериментов для сравнения.
-
-    Returns
-    -------
-    None
-    '''
-
-    # Simulated data for demonstration purposes
-    fig = go.Figure()
-
-    for experiment in selected_experiments:
-        x = list(range(10))  # Epochs
-        y = [val * (0.9 + 0.1 * (hash(experiment) % 3)) for val in range(10)]
-        fig.add_trace(go.Scatter(x=x, y=y, mode='lines', name=experiment))
-
-    fig.update_layout(
-        title='Кривые обучения',
-        xaxis_title='Эпоха',
-        yaxis_title='Значение метрики',
-        template='plotly_dark',
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+   pass
 
 
 @exception_handler
-def get_chart(df, ticker):
+def get_figure(df, ticker):
     fig = px.line(df, x=df.index, y=f'{ticker}', title=f'{ticker}')
 
     fig.update_layout(
@@ -107,38 +118,63 @@ def get_chart(df, ticker):
 
 
 @async_exception_handler
-async def inference_model(df, ticker, model, hyperparameters):
-    url = f'{base_url}/predict/auto_arima'
+async def inference_model(df, ticker, period):
+    url = f'{base_url}/predict'
     payload = {
-        'data': df[ticker].values.tolist(),
-        'n_periods': hyperparameters['period'],
+        'n_periods': period
     }
-    if model == 'Holt Winters':
-        url = f'{base_url}/predict/holt_winters'
-        payload['trend'] = hyperparameters['trend']
-        payload['seasonal'] = hyperparameters['seasonal']
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload)
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, json=payload) as response:
-            if response.status == 200:
-                predictions = await response.json()
-                st.write('Результаты предсказания:', predictions)
-                fig = get_chart(df, ticker)
-                fig.add_scatter(
-                    x=pd.date_range(
-                        start=df.index[-1] + pd.DateOffset(days=1),
-                        periods=hyperparameters['period'],
-                        freq='D',
-                    ),
-                    y=predictions['forecast'],
-                    mode='lines',
-                    name='Predictions',
-                )
-                st.plotly_chart(fig)
+        if response.status_code == 200:
+            predictions = response.json()
+            st.subheader('Результаты предсказания')
+            fig = get_figure(df, ticker)
+            fig.add_scatter(
+                x=pd.date_range(
+                    start=df.index[-1] + pd.DateOffset(days=1),
+                    periods=period,
+                    freq='D',
+                ),
+                y=predictions['forecast'],
+                mode='lines',
+                name='Predictions',
+            )
+            st.plotly_chart(fig)
 
-            else:
-                error_message = await response.text()
-                st.error(f'Ошибка при отправке запроса: {error_message}')
+        else:
+            error_message = response.text
+            st.error(f'Ошибка при отправке запроса: {error_message}')
+
+@async_exception_handler
+async def get_list_models():
+    url = f'{base_url}/list'
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+
+        if response.status_code == 200:
+            models = response.json()["models"]
+            df = pd.DataFrame(models)
+            st.table(df)
+            return df
+        else:
+            error_message = response.text
+            st.error(f'Ошибка при отправке запроса: {error_message}')
+
+@async_exception_handler
+async def delete_models():
+    url = f'{base_url}/remove_all'
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+
+        if response.status_code == 200:
+            st.write( response.json()["message"])
+        else:
+            error_message = response.text
+            st.error(f'Ошибка при отправке запроса: {error_message}')
+
 
 
 @exception_handler
@@ -168,7 +204,6 @@ def upload_file(template_type):
         return cleaned_df, True
     return None, False
 
-
 @exception_handler
 def select_ticker(df, template_type):
     st.sidebar.header('Выбор тикера')
@@ -176,9 +211,8 @@ def select_ticker(df, template_type):
     search_term = st.sidebar.text_input(
         'Поиск:',
         placeholder=f'Введите тикер {
-            'валютной пары' if template_type == 'Котировки валют'
-            else 'акции'}',
-    )
+        'валютной пары' if template_type == 'Котировки валют'
+        else 'акции'}')
 
     filtered_options = [
         option for option in options if search_term.lower() in option.lower()
@@ -186,50 +220,82 @@ def select_ticker(df, template_type):
 
     selected_option = st.sidebar.selectbox(
         f'Выберите '
-        f'{'валютную пару'if template_type == 'Котировки валют' else 'акцию'}',
-        filtered_options,
+        f'{'валютную пару' if template_type == 'Котировки валют' else 'акцию'}',
+        filtered_options
     )
 
     if selected_option:
-        st.sidebar.write(f'Ваш выбор: {selected_option}')
+        st.write(f'Ваш выбор: {selected_option}')
         return selected_option
     return None
 
+@async_exception_handler
+async def set_active_model(model_id):
+    url = f'{base_url}/set'
+    payload = {
+        'id': model_id
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(url, json=payload)
 
-@exception_handler
-def select_model_and_hyperparameters():
-    st.sidebar.header('Выбор модели и гиперпараметров')
-    options = ['Auto ARIMA', 'Holt Winters']
+        if response.status_code == 200:
+            st.write(response.json()["message"])
+        else:
+            error_message = response.text
+            st.error(f'Ошибка при отправке запроса: {error_message}')
 
-    selected_model = st.sidebar.selectbox(f'Выберите модель:',
-                                          options, index=None)
-    selected_period, selected_trend, selected_seasonal = None, None, None
-    if selected_model:
-        selected_period = int(
-            st.sidebar.text_input('Период:',
-                                  placeholder='Введите период предсказания:')
-        )
-        if selected_model == 'Holt Winters':
-            selected_trend = st.sidebar.selectbox(
+
+@async_exception_handler
+async def fit_or_predict(template_type, df, ticker = None):
+    if template_type == "fit":
+        st.header('Обучение модели 🔧')
+        selected_model = st.selectbox(f'Выберите модель:',
+                                              ModelType)
+        model_id = st.text_input('Id:',
+                              placeholder='Введите id модели:')
+
+        seasonal_periods = None
+        selected_period, selected_trend, selected_seasonal = None, None, None
+
+        if selected_model == ModelType.holt_winters:
+            selected_trend = st.selectbox(
                 f'Выберите тип трендовой компоненты:',
                 ['additive', 'multiplicative'],
                 index=None,
             )
-            selected_seasonal = st.sidebar.selectbox(
+            selected_seasonal = st.selectbox(
                 f'Выберите тип сезонной компоненты:',
                 ['additive', 'multiplicative'],
                 index=None,
             )
+            seasonal_periods = st.text_input('Сезонный период:',
+                                                     placeholder='Введите длину сезонного цикла:')
+        if model_id:
+             if st.button('Обучить модель!'):
+                 await train_model(df, model_id, selected_model,
+                           selected_trend, selected_seasonal, seasonal_periods
+                 )
+    else:
+        st.header('Инференс модели 🔥')
+        list_models = await get_list_models()
+        if st.button('Удалить все модели'):
+            await delete_models()
+        selected_model = st.selectbox(f'Выберите модель:', list_models)
+        if selected_model:
+            selected_period = (
+                st.text_input('Период:',
+                              placeholder='Введите период предсказания:')
+            )
 
-    return selected_model, {
-        'period': selected_period,
-        'trend': selected_trend,
-        'seasonal': selected_seasonal,
-    }
+            if st.button('Предсказать!') and selected_period:
+                await set_active_model(selected_model)
+                await inference_model(df, ticker, int(selected_period))
+
+
 
 
 @exception_handler
-def create_template(
+async def create_template(
     is_uploaded: bool, template_type: Literal['Котировки валют', 'Акции']
 ) -> None:
     '''
@@ -253,14 +319,18 @@ def create_template(
             st.header('Аналитика файла 📊')
             analytics = get_analytics(df, template_type, selected_ticker)
 
-            model, hyperparameters = select_model_and_hyperparameters()
-            if model and hyperparameters['period']:
-                st.header('Обучение модели 🔧')
-                train_model()
+            tab_fit, tab_predict = st.tabs(tabs=['Обучение', 'Прогнозирование'])
 
-                st.header('Инференс модели 🔥')
-                asyncio.run(
-                    inference_model(
-                        df, selected_ticker, model, hyperparameters
-                    )
+            with tab_fit:
+                await fit_or_predict(
+                    template_type='fit',
+                    df=df[selected_ticker]
                 )
+
+            with tab_predict:
+                await fit_or_predict(
+                    template_type='predict',
+                    df=df,
+                    ticker=selected_ticker
+                )
+

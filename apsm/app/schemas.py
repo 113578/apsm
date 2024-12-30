@@ -1,3 +1,5 @@
+from enum import Enum
+
 from pydantic import BaseModel
 from typing import (
     List,
@@ -8,11 +10,14 @@ from typing import (
 )
 
 
+class ModelType(str, Enum):
+    auto_arima = "auto_arima"
+    holt_winters = "holt_winters"
+
+
 class ModelConfig(BaseModel):
     id: str
-    ml_model_type: Literal[
-        'auto_arima', 'holt_winters'
-    ]
+    ml_model_type: ModelType
     hyperparameters: Optional[
         Dict[str, Union[str, bool, int, float]]
     ] = None
@@ -20,7 +25,6 @@ class ModelConfig(BaseModel):
 
 class FitRequest(BaseModel):
     data: List[float]
-    n_periods: int
     config: ModelConfig
 
 
@@ -29,7 +33,6 @@ class FitResponse(BaseModel):
 
 
 class PredictRequest(BaseModel):
-    id: str
     n_periods: int
 
 
@@ -47,6 +50,14 @@ class RemoveResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     response: Dict[str, str]
+
+
+class SetResponse(BaseModel):
+    message: str
+
+
+class SetRequest(BaseModel):
+    id: str
 
 
 class LoadRequest(BaseModel):
