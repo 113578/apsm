@@ -1,8 +1,8 @@
-import uvicorn
-
-from fastapi import FastAPI
 from http import HTTPStatus
-from endpoints import *
+
+import uvicorn
+from fastapi import FastAPI
+from endpoints import model_router
 from schemas import StatusResponse
 
 
@@ -18,6 +18,14 @@ app.include_router(router=model_router)
     status_code=HTTPStatus.OK
 )
 async def root() -> StatusResponse:
+    """
+    Возвращает статус работы API.
+
+    Returns
+    -------
+    StatusResponse
+        Сообщение о статусе API.
+    """
     return StatusResponse(
         response={
             'message':
@@ -27,4 +35,4 @@ async def root() -> StatusResponse:
 
 
 if __name__ == '__main__':
-    uvicorn.run('main:app', host='127.0.0.1', port=8000, reload=True)
+    uvicorn.run('main:app', host='0.0.0.0', port=8000, reload=True)

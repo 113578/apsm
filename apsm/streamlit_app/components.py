@@ -1,57 +1,28 @@
-import asyncio
 import os
-from enum import Enum
-from http import HTTPStatus
+from typing import Literal, Union, Tuple
 
 import httpx
 import streamlit as st
 import pandas as pd
+import plotly
 import plotly.express as px
-
-from typing import Literal
-from pygments.lexers import go
-
-
-# from apsm.utils import setup_logger
+from apsm.app.schemas import ModelType
+from apsm.utils import setup_logger
 
 
-# logger = setup_logger(
-#     name='streamlit',
-#     log_file=os.getenv('PYTHONPATH') + '/logs/streamlit.log'
-# )
+logger = setup_logger(
+    name='streamlit',
+    log_file=os.getenv('PYTHONPATH') + '/logs/streamlit.log'
+)
 
-class ModelType(str, Enum):
-    auto_arima = "auto_arima"
-    holt_winters = "holt_winters"
+base_url = 'http://fastapi:8000'
 
 
-base_url = 'http://127.0.0.1:8000'
-
-
-def exception_handler(func):
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            st.error(f'Про {func.__name__}: {e}')
-            # logger.error(f'An error occurred in {func.__name__}: {e}')
-
-    return wrapper
-
-
-def async_exception_handler(func):
-    async def wrapper(*args, **kwargs):
-        try:
-            return await func(*args, **kwargs)
-        except Exception as e:
-            st.error(f'An error occurred in {func.__name__}: {e}')
-            # logger.error(f'An error occurred in {func.__name__}: {e}')
-
-    return wrapper
-
-
-@exception_handler
-def get_analytics(df, template_type, selected_option):
+def get_analytics(
+    df: pd.DataFrame,
+    template_type: str,
+    selected_option: str
+) -> None:
     '''
     Получение аналитики по загруженному файлу.
 
@@ -65,14 +36,41 @@ def get_analytics(df, template_type, selected_option):
     analytics : pd.DataFrame
         Кадр данных, содержащий аналитику.
     '''
-
     fig = get_figure(df, selected_option)
     st.plotly_chart(fig)
 
 
-@exception_handler
-async def train_model(df, model_id, selected_model,
-                      trend, seasonal, seasonal_periods):
+async def train_model(
+    df: pd.DataFrame,
+    model_id: str,
+    selected_model: str,
+    trend: str,
+    seasonal: str,
+    seasonal_periods: int
+) -> None:
+    """
+    Запуск обучения модели прогнозирования с заданными параметрами.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Данные для обучения.
+    model_id : str
+        Уникальный идентификатор обучаемой модели.
+    selected_model : str
+        Тип модели, которая будет обучена (например, 'holt_winters').
+    trend : str
+        Трендовая компонента для модели Holt-Winters.
+    seasonal : str
+        Сезонная компонента для модели Holt-Winters.
+    seasonal_periods : int
+        Длина сезонного цикла.
+
+    Returns
+    -------
+    None
+        Отображает сообщения об успехе или ошибке в интерфейсе Streamlit.
+    """
     url = f'{base_url}/fit'
     payload = {
         'data': df.values.tolist(),
@@ -83,7 +81,7 @@ async def train_model(df, model_id, selected_model,
     }
 
     if selected_model == 'holt_winters':
-        payload["config"]['hyperparameters'] = {
+        payload['config']['hyperparameters'] = {
             'trend': trend,
             'seasonal': seasonal,
             'seasonal_periods': int(seasonal_periods)
@@ -93,30 +91,77 @@ async def train_model(df, model_id, selected_model,
         response = await client.post(url, json=payload)
 
         if response.status_code == 201:
-            message = response.json()["message"]
+            message = response.json()['message']
             st.write(message)
+            logger.info(message)
         else:
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
+            logger.error(
+                'Ошибка при отправке запроса: %s',
+                error_message
+            )
 
 
-@exception_handler
-def compare_experiments():
-    pass
+# def compare_experiments():
+#     """
+#     Заготовка.
+#     """
+#     return
 
 
-@exception_handler
-def get_figure(df, ticker):
+def get_figure(
+    df: pd.DataFrame,
+    ticker: str
+) -> plotly.graph_objs.Figure:
+    """
+    Генерация графика на основе данных.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Данные для построения графика.
+    ticker : str
+        Название тикера для отображения.
+
+    Returns
+    -------
+    fig : plotly.graph_objs.Figure
+        Объект графика для отображения.
+    """
     fig = px.line(df, x=df.index, y=f'{ticker}', title=f'{ticker}')
 
     fig.update_layout(
-        xaxis_title='Date', yaxis_title='Price', legend_title_text=f'{ticker}'
+        xaxis_title='Date',
+        yaxis_title='Price',
+        legend_title_text=f'{ticker}'
     )
+
     return fig
 
 
-@async_exception_handler
-async def inference_model(df, ticker, period):
+async def inference_model(
+    df: pd.DataFrame,
+    ticker: str,
+    period: int
+) -> None:
+    """
+    Проведение прогнозирования с использованием обученной модели.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Данные для предсказания.
+    ticker : str
+        Название тикера для анализа.
+    period : int
+        Период прогнозирования в днях.
+
+    Returns
+    -------
+    None
+        Отображает график предсказаний или сообщение об ошибке в интерфейсе Streamlit.
+    """
     url = f'{base_url}/predict'
     payload = {
         'n_periods': period
@@ -127,6 +172,7 @@ async def inference_model(df, ticker, period):
         if response.status_code == 200:
             predictions = response.json()
             st.subheader('Результаты предсказания')
+
             fig = get_figure(df, ticker)
             fig.add_scatter(
                 x=pd.date_range(
@@ -143,41 +189,86 @@ async def inference_model(df, ticker, period):
         else:
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
+            logger.error(
+                'Ошибка при отправке запроса: %s',
+                error_message
+            )
 
 
-@async_exception_handler
-async def get_list_models():
+async def get_list_models() -> pd.DataFrame:
+    """
+    Получение списка доступных моделей.
+
+    Returns
+    -------
+    pd.DataFrame
+        Таблица с информацией о моделях.
+    """
     url = f'{base_url}/list'
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
 
         if response.status_code == 200:
-            models = response.json()["models"]
+            models = response.json()['models']
             df = pd.DataFrame(models)
             st.table(df)
+
             return df
+
         else:
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
+            logger.error(
+                'Ошибка при отправке запроса: %s',
+                error_message
+            )
 
 
-@async_exception_handler
-async def delete_models():
+async def delete_models() -> None:
+    """
+    Удаляет все сохраненные модели на сервере.
+
+    Returns
+    -------
+    None
+        Выводит результат операции в Streamlit.
+    """
     url = f'{base_url}/remove_all'
 
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
 
         if response.status_code == 200:
-            st.write(response.json()["message"])
+            st.write(response.json()['message'])
         else:
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
+            logger.error(
+                'Ошибка при отправке запроса: %s',
+                error_message
+            )
 
 
-@exception_handler
-def clean_data(df, template_type):
+def clean_data(
+    df: pd.DataFrame,
+    template_type: str
+) -> pd.DataFrame:
+    """
+    Очистка загруженных данных в зависимости от типа шаблона.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Данные для очистки.
+    template_type : str
+        Тип шаблона ('Котировки валют' или другой тип).
+
+    Returns
+    -------
+    pd.DataFrame
+        Очищенные данные.
+    """
     if template_type == 'Котировки валют':
         df.dropna(inplace=True)
         df = df.filter(regex='Close', axis=1)
@@ -186,11 +277,27 @@ def clean_data(df, template_type):
     else:
         cleaned_df = df.loc[:, (df.isnull()).sum() < 115]
         cleaned_df.dropna(inplace=True)
+
     return cleaned_df
 
 
-@exception_handler
-def upload_file(template_type):
+def upload_file(
+    template_type: str
+) -> Tuple[Union[pd.DataFrame, None], bool]:
+    """
+    Загрузка файла через интерфейс Streamlit и его обработка.
+
+    Parameters
+    ----------
+    template_type : str
+        Тип шаблона ('Котировки валют' или другой тип).
+
+    Returns
+    -------
+    Tuple[Union[pd.DataFrame, None], bool]
+        Возвращает очищенные данные и флаг успешной загрузки.
+        Если файл не загружен, возвращает (None, False).
+    """
     if template_type == 'Котировки валют':
         st.header('Загрузка котировок валют🔻')
     else:
@@ -200,126 +307,228 @@ def upload_file(template_type):
     if uploaded_file:
         df = pd.read_parquet(uploaded_file, engine='pyarrow')
         cleaned_df = clean_data(df, template_type)
+
         return cleaned_df, True
+
     return None, False
 
 
-@exception_handler
-def select_ticker(df, template_type):
+def select_ticker(
+    df: pd.DataFrame,
+    template_type: str
+) -> Union[str, None]:
+    """
+    Выбор тикера из предоставленных данных через боковую панель Streamlit.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Данные для выбора тикера.
+    template_type : str
+        Тип шаблона ('Котировки валют' или другой тип).
+
+    Returns
+    -------
+    Union[str, None]
+        Выбранный тикер, если он выбран, иначе None.
+    """
     st.sidebar.header('Выбор тикера')
     options = df.columns
+
     search_term = st.sidebar.text_input(
         'Поиск:',
-        placeholder=f'Введите тикер {
-            'валютной пары' if template_type == 'Котировки валют'
-            else 'акции'}')
+        placeholder=f"""
+            Введите тикер {
+                'валютной пары' if template_type == 'Котировки валют' else 'акции'
+            }
+        """
+    )
 
     filtered_options = [
-        option for option in options if search_term.lower() in option.lower()
+        option for option in options
+        if search_term.lower() in option.lower()
     ]
 
     selected_option = st.sidebar.selectbox(
-        f'Выберите {'валютную пару' if template_type == 'Котировки валют'
-                    else 'акцию'}', filtered_options
+        f"""
+            Выберите {
+                'валютную пару' if template_type == 'Котировки валют' else 'акцию'
+            }
+        """,
+        filtered_options
     )
 
     if selected_option:
         st.write(f'Ваш выбор: {selected_option}')
+
         return selected_option
+
     return None
 
 
-@async_exception_handler
-async def set_active_model(model_id):
+async def set_active_model(model_id: str) -> None:
+    """
+    Установка активной модели на сервере.
+
+    Parameters
+    ----------
+    model_id : str
+        Идентификатор модели, которая будет установлена как активная.
+
+    Returns
+    -------
+    None
+        Отображает сообщение об успехе или ошибке в интерфейсе Streamlit.
+    """
     url = f'{base_url}/set'
     payload = {
         'id': model_id
     }
+
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json=payload)
 
         if response.status_code == 200:
-            st.write(response.json()["message"])
+            message = response.json()['message']
+
+            st.write(message)
+            logger.info(message)
         else:
             error_message = response.text
+
             st.error(f'Ошибка при отправке запроса: {error_message}')
+            logger.error(
+                'Ошибка при отправке запроса: %s',
+                error_message
+            )
 
 
-@async_exception_handler
-async def fit_or_predict(template_type, df, ticker=None):
-    if template_type == "fit":
+async def fit_or_predict(
+    template_type: str,
+    df: pd.DataFrame,
+    ticker: str = None
+):
+    """
+    Выполнение обучения модели или прогнозирования в зависимости от типа шаблона.
+
+    Parameters
+    ----------
+    template_type : str
+        Тип операции ('fit' для обучения, 'predict' для прогнозирования).
+    df : pd.DataFrame
+        Данные для обработки.
+    ticker : str, optional
+        Название тикера для анализа (по умолчанию None).
+
+    Returns
+    -------
+    None
+        Выполняет задачу обучения или прогнозирования и отображает результаты.
+    """
+    if template_type == 'fit':
         st.header('Обучение модели 🔧')
-        selected_model = st.selectbox(f'Выберите модель:',
-                                      ModelType)
-        model_id = st.text_input('Id:',
-                                 placeholder='Введите id модели:')
+        selected_model = st.selectbox(
+            'Выберите модель:',
+            ModelType
+        )
+        model_id = st.text_input(
+            'ID:',
+            placeholder='Введите ID модели:'
+        )
 
         seasonal_periods = None
-        selected_period, selected_trend, selected_seasonal = None, None, None
+        selected_period = selected_trend = selected_seasonal = None
 
         if selected_model == ModelType.holt_winters:
             selected_trend = st.selectbox(
-                f'Выберите тип трендовой компоненты:',
-                ['additive', 'multiplicative'],
+                'Выберите тип трендовой компоненты:',
+                ['add', 'mul'],
                 index=None,
             )
             selected_seasonal = st.selectbox(
-                f'Выберите тип сезонной компоненты:',
-                ['additive', 'multiplicative'],
+                'Выберите тип сезонной компоненты:',
+                ['add', 'mul'],
                 index=None,
             )
-            seasonal_periods = st.text_input('Сезонный период:',
-                                             placeholder='Введите длину'
-                                                         ' сезонного цикла:')
+            seasonal_periods = st.text_input(
+                'Сезонный период:',
+                placeholder='Введите длину сезонного цикла:')
+
         if model_id:
             if st.button('Обучить модель!'):
-                await train_model(df, model_id, selected_model,
-                                  selected_trend, selected_seasonal,
-                                  seasonal_periods
-                                  )
+                await train_model(
+                    df=df,
+                    model_id=model_id,
+                    selected_model=selected_model,
+                    trend=selected_trend,
+                    seasonal=selected_seasonal,
+                    seasonal_periods=seasonal_periods
+                    )
     else:
         st.header('Инференс модели 🔥')
         list_models = await get_list_models()
+
         if st.button('Удалить все модели'):
             await delete_models()
-        selected_model = st.selectbox(f'Выберите модель:', list_models)
+
+        selected_model = st.selectbox('Выберите модель:', list_models)
         if selected_model:
             selected_period = (
-                st.text_input('Период:',
-                              placeholder='Введите период предсказания:')
+                st.text_input(
+                    'Период (дни):',
+                    placeholder='Введите период предсказания:'
+                )
             )
 
             if st.button('Предсказать!') and selected_period:
-                await set_active_model(selected_model)
-                await inference_model(df, ticker, int(selected_period))
+                await set_active_model(model_id=selected_model)
+                await inference_model(
+                    df=df,
+                    ticker=ticker,
+                    period=int(selected_period)
+                )
 
 
-@exception_handler
 async def create_template(
-        is_uploaded: bool, template_type: Literal['Котировки валют', 'Акции']
+    is_uploaded: bool,
+    template_type: Literal['Котировки валют', 'Акции']
 ) -> None:
-    '''
+    """
     Создание шаблона приложения.
 
     Parameters
     ----------
     is_uploaded : bool
         Состояние загружаемого файла.
-    template_type : str
-        Тип шаблона
-    '''
+    template_type : Literal['Котировки валют', 'Акции']
+        Тип шаблона ('Котировки валют' или 'Акции').
 
-    df, is_uploaded = upload_file(template_type)
+    Returns
+    -------
+    None
+        Управляет загрузкой файла, выбором тикера и последующими действиями
+        (обучение модели или прогнозирование).
+    """
+    df, is_uploaded = upload_file(template_type=template_type)
 
     if is_uploaded:
         st.write(df)
-        selected_ticker = select_ticker(df, template_type)
+        selected_ticker = select_ticker(
+            df=df,
+            template_type=template_type
+        )
 
         if selected_ticker:
             st.header('Аналитика файла 📊')
-            analytics = get_analytics(df, template_type, selected_ticker)
-            tab_fit, tab_predict = st.tabs(tabs=['Обучение',
-                                                 'Прогнозирование'])
+            # analytics = get_analytics(
+            #     df=df,
+            #     template_type=template_type,
+            #     selected_option=selected_ticker
+            # )
+
+            tab_fit, tab_predict = st.tabs(
+                tabs=['Обучение', 'Прогнозирование']
+            )
 
             with tab_fit:
                 await fit_or_predict(

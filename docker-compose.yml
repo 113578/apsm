@@ -17,6 +17,9 @@ services:
             - '8000:8000'
         environment:
             - PYTHONPATH=/usr/src/app
+        volumes:
+            - ./logs:/usr/src/app/logs
+            - ./models:/usr/src/app/models
 
     streamlit:
         build:
@@ -24,7 +27,12 @@ services:
             dockerfile: ./apsm/streamlit_app/Dockerfile
         depends_on:
             - base
+            - fastapi
         ports:
             - '8501:8501'
         environment:
             - PYTHONPATH=/usr/src/app
+        volumes:
+            - ./logs:/usr/src/app/logs
+            - ./models:/usr/src/app/models
+

@@ -1,18 +1,17 @@
 from enum import Enum
-
-from pydantic import BaseModel
 from typing import (
     List,
     Dict,
     Optional,
-    Literal,
     Union
 )
 
+from pydantic import BaseModel
+
 
 class ModelType(str, Enum):
-    auto_arima = "auto_arima"
-    holt_winters = "holt_winters"
+    auto_arima = 'auto_arima'
+    holt_winters = 'holt_winters'
 
 
 class ModelConfig(BaseModel):
@@ -52,12 +51,12 @@ class StatusResponse(BaseModel):
     response: Dict[str, str]
 
 
-class SetResponse(BaseModel):
-    message: str
-
-
 class SetRequest(BaseModel):
     id: str
+
+
+class SetResponse(BaseModel):
+    message: str
 
 
 class LoadRequest(BaseModel):
@@ -66,3 +65,7 @@ class LoadRequest(BaseModel):
 
 class LoadResponse(BaseModel):
     message: str
+
+
+class ModelManager(BaseModel):
+    model: str = None

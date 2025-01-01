@@ -1,11 +1,13 @@
 import asyncio
-
 import streamlit as st
 
 from components import create_template
 
 
 async def main():
+    """
+    Запуск кода на Streamlit.
+    """
     is_uploaded = True
 
     st.set_page_config(page_title='APSM', page_icon='📈')
