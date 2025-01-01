@@ -1,3 +1,4 @@
+import os
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -13,6 +14,11 @@ def setup_logger(name: str, log_file: str):
     log_file : str
         Название файла с логами.
     """
+    os.makedirs(
+        os.getenv('PYTHONPATH') + '/logs', 
+        exist_ok=True
+    )
+    
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
