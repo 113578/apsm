@@ -32,6 +32,7 @@ services:
             - '8501:8501'
         environment:
             - PYTHONPATH=/usr/src/app
+            - STREAMLIT_BASE_URL=http://fastapi:8000
         volumes:
             - ./logs:/usr/src/app/logs
             - ./models:/usr/src/app/models

@@ -15,7 +15,7 @@ logger = setup_logger(
     log_file=os.getenv('PYTHONPATH') + '/logs/streamlit.log'
 )
 
-base_url = 'http://fastapi:8000'
+base_url = os.getenv('STREAMLIT_BASE_URL', 'http://fastapi:8000')
 
 
 def get_analytics(
