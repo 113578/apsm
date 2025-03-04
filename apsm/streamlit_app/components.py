@@ -4,6 +4,7 @@ from typing import Literal, Union, Tuple
 import httpx
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly
 import plotly.express as px
 from apsm.app.schemas import ModelType
@@ -21,7 +22,7 @@ base_url = os.getenv('STREAMLIT_BASE_URL', 'http://fastapi:8000')
 def get_analytics(
     df: pd.DataFrame,
     template_type: str,
-    selected_option: str
+    selected_ticker: str
 ) -> None:
     '''
     Получение аналитики по загруженному файлу.
@@ -36,7 +37,23 @@ def get_analytics(
     analytics : pd.DataFrame
         Кадр данных, содержащий аналитику.
     '''
-    fig = get_figure(df, selected_option)
+    st.subheader('Статистика кадра данных')
+    a, b, c = st.columns(3)
+    a.metric(label='Объём данных', value=df.shape[0])
+    b.metric(label='Кол-во тикеров', value=df.shape[1])
+    c.metric(
+        label='Уникальных значений',
+        value=df.nunique().sum()
+    )
+
+    st.subheader(f'{selected_ticker}')
+    st.dataframe(df[selected_ticker].describe())
+
+    st.subheader('Распределение тикера')
+    fig = get_figure(
+        df=df,
+        ticker=selected_ticker
+    )
     st.plotly_chart(fig)
 
 
@@ -101,13 +118,6 @@ async def train_model(
                 'Ошибка при отправке запроса: %s',
                 error_message
             )
-
-
-# def compare_experiments():
-#     """
-#     Заготовка.
-#     """
-#     return
 
 
 def get_figure(
@@ -429,11 +439,13 @@ async def fit_or_predict(
         st.header('Обучение модели 🔧')
         selected_model = st.selectbox(
             'Выберите модель:',
-            ModelType
+            ModelType,
+            key=np.random.randint(10_000)
         )
         model_id = st.text_input(
             'ID:',
-            placeholder='Введите ID модели:'
+            placeholder='Введите ID модели:',
+            key=np.random.randint(10_000)
         )
 
         seasonal_periods = None
@@ -444,18 +456,25 @@ async def fit_or_predict(
                 'Выберите тип трендовой компоненты:',
                 ['add', 'mul'],
                 index=None,
+                key=np.random.randint(10_000)
             )
             selected_seasonal = st.selectbox(
                 'Выберите тип сезонной компоненты:',
                 ['add', 'mul'],
                 index=None,
+                key=np.random.randint(10_000)
             )
             seasonal_periods = st.text_input(
                 'Сезонный период:',
-                placeholder='Введите длину сезонного цикла:')
+                placeholder='Введите длину сезонного цикла:',
+                key=np.random.randint(10_000)
+            )
 
         if model_id:
-            if st.button('Обучить модель!'):
+            if st.button(
+                'Обучить модель!',
+                key=np.random.randint(10_000)
+            ):
                 await train_model(
                     df=df,
                     model_id=model_id,
@@ -468,19 +487,30 @@ async def fit_or_predict(
         st.header('Инференс модели 🔥')
         list_models = await get_list_models()
 
-        if st.button('Удалить все модели'):
+        if st.button(
+            'Удалить все модели',
+            key=np.random.randint(10_000)
+        ):
             await delete_models()
 
-        selected_model = st.selectbox('Выберите модель:', list_models)
+        selected_model = st.selectbox(
+            'Выберите модель:',
+            list_models,
+            key=np.random.randint(10_000)
+        )
         if selected_model:
             selected_period = (
                 st.text_input(
                     'Период (дни):',
-                    placeholder='Введите период предсказания:'
+                    placeholder='Введите период предсказания:',
+                    key=np.random.randint(10_000)
                 )
             )
 
-            if st.button('Предсказать!') and selected_period:
+            if st.button(
+                'Предсказать!',
+                key=np.random.randint(10_000)
+            ) and selected_period:
                 await set_active_model(model_id=selected_model)
                 await inference_model(
                     df=df,
@@ -520,11 +550,11 @@ async def create_template(
 
         if selected_ticker:
             st.header('Аналитика файла 📊')
-            # analytics = get_analytics(
-            #     df=df,
-            #     template_type=template_type,
-            #     selected_option=selected_ticker
-            # )
+            get_analytics(
+                df=df,
+                template_type=template_type,
+                selected_ticker=selected_ticker
+            )
 
             tab_fit, tab_predict = st.tabs(
                 tabs=['Обучение', 'Прогнозирование']
