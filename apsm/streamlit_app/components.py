@@ -122,7 +122,9 @@ async def train_model(
 
 def get_figure(
     df: pd.DataFrame,
-    ticker: str
+    ticker: str,
+    y_title: str = 'Price'
+
 ) -> plotly.graph_objs.Figure:
     """
     Генерация графика на основе данных.
@@ -133,17 +135,19 @@ def get_figure(
         Данные для построения графика.
     ticker : str
         Название тикера для отображения.
+    y_title: str
+        Название оси y
 
     Returns
     -------
     fig : plotly.graph_objs.Figure
         Объект графика для отображения.
     """
-    fig = px.line(df, x=df.index, y=f'{ticker}', title=f'{ticker}')
+    fig = px.line(df, x=df.index, y=f'{ticker}', title=ticker)
 
     fig.update_layout(
         xaxis_title='Date',
-        yaxis_title='Price',
+        yaxis_title=y_title,
         legend_title_text=f'{ticker}'
     )
 
@@ -176,33 +180,47 @@ async def inference_model(
     payload = {
         'n_periods': period
     }
+    start = df.index[-1] + pd.DateOffset(days=1)
+
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload)
+        for i in range(2):
+            if i == 1:
+                period = df.shape[0]
+                start = df.index[0]
+                payload = {
+                    'n_periods': period,
+                    'future_forecast': True
+                }
+            response = await client.post(url, json=payload)
+            if response.status_code == 200:
+                predictions = response.json()['forecast']
+                st.subheader('Результаты предсказания' + (" на обучающей выборке" if i == 1 else ""))
 
-        if response.status_code == 200:
-            predictions = response.json()
-            st.subheader('Результаты предсказания')
+                fig = get_figure(df, ticker)
+                fig.add_scatter(
+                    x=pd.date_range(
+                        start=start,
+                        periods=period,
+                        freq='D',
+                    ),
+                    y=predictions,
+                    mode='lines',
+                    name='Predictions',
+                )
+                st.plotly_chart(fig)
 
-            fig = get_figure(df, ticker)
-            fig.add_scatter(
-                x=pd.date_range(
-                    start=df.index[-1] + pd.DateOffset(days=1),
-                    periods=period,
-                    freq='D',
-                ),
-                y=predictions['forecast'],
-                mode='lines',
-                name='Predictions',
-            )
-            st.plotly_chart(fig)
+            else:
+                error_message = response.text
+                st.error(f'Ошибка при отправке запроса: {error_message}')
+                logger.error(
+                    'Ошибка при отправке запроса: %s',
+                    error_message
+                )
 
-        else:
-            error_message = response.text
-            st.error(f'Ошибка при отправке запроса: {error_message}')
-            logger.error(
-                'Ошибка при отправке запроса: %s',
-                error_message
-            )
+        st.subheader('График остатков')
+        fig = get_figure(df[ticker] - predictions, ticker, 'residuals')
+        st.plotly_chart(fig)
+
 
 
 async def get_list_models() -> pd.DataFrame:
@@ -342,6 +360,7 @@ def select_ticker(
     Union[str, None]
         Выбранный тикер, если он выбран, иначе None.
     """
+    is_currency = int(template_type == 'Котировки валют')
     st.sidebar.header('Выбор тикера')
     options = df.columns
 
@@ -351,7 +370,8 @@ def select_ticker(
             Введите тикер {
                 'валютной пары' if template_type == 'Котировки валют' else 'акции'
             }
-        """
+        """,
+        key=f"search_term{is_currency}"
     )
 
     filtered_options = [
@@ -365,7 +385,8 @@ def select_ticker(
                 'валютную пару' if template_type == 'Котировки валют' else 'акцию'
             }
         """,
-        filtered_options
+        filtered_options,
+        key=f"selected_option{is_currency}"
     )
 
     if selected_option:
@@ -435,17 +456,19 @@ async def fit_or_predict(
     None
         Выполняет задачу обучения или прогнозирования и отображает результаты.
     """
+    template_type, is_currency = template_type.split('_')[0], int(template_type.split('_')[1] == 'Котировки валют')
+
     if template_type == 'fit':
         st.header('Обучение модели 🔧')
         selected_model = st.selectbox(
             'Выберите модель:',
             ModelType,
-            key=np.random.randint(10_000)
+            key=f"selected_model{is_currency}"
         )
         model_id = st.text_input(
             'ID:',
             placeholder='Введите ID модели:',
-            key=np.random.randint(10_000)
+            key=f"model_id{is_currency}"
         )
 
         seasonal_periods = None
@@ -456,24 +479,24 @@ async def fit_or_predict(
                 'Выберите тип трендовой компоненты:',
                 ['add', 'mul'],
                 index=None,
-                key=np.random.randint(10_000)
+                key=f"selected_trend{is_currency}"
             )
             selected_seasonal = st.selectbox(
                 'Выберите тип сезонной компоненты:',
                 ['add', 'mul'],
                 index=None,
-                key=np.random.randint(10_000)
+                key=f"selected_seasonal{is_currency}"
             )
             seasonal_periods = st.text_input(
                 'Сезонный период:',
                 placeholder='Введите длину сезонного цикла:',
-                key=np.random.randint(10_000)
+                key=f"seasonal_periods{is_currency}"
             )
 
         if model_id:
             if st.button(
                 'Обучить модель!',
-                key=np.random.randint(10_000)
+                key=f"fit_model{is_currency}"
             ):
                 await train_model(
                     df=df,
@@ -489,27 +512,27 @@ async def fit_or_predict(
 
         if st.button(
             'Удалить все модели',
-            key=np.random.randint(10_000)
+            key=f"delete_models{is_currency}"
         ):
             await delete_models()
 
         selected_model = st.selectbox(
             'Выберите модель:',
             list_models,
-            key=np.random.randint(10_000)
+            key=f"select_model{is_currency}"
         )
         if selected_model:
             selected_period = (
                 st.text_input(
                     'Период (дни):',
                     placeholder='Введите период предсказания:',
-                    key=np.random.randint(10_000)
+                    key=f"period{is_currency}"
                 )
             )
 
             if st.button(
                 'Предсказать!',
-                key=np.random.randint(10_000)
+                key=f"predict{is_currency}"
             ) and selected_period:
                 await set_active_model(model_id=selected_model)
                 await inference_model(
@@ -562,13 +585,13 @@ async def create_template(
 
             with tab_fit:
                 await fit_or_predict(
-                    template_type='fit',
+                    template_type=f'fit_{template_type}',
                     df=df[selected_ticker]
                 )
 
             with tab_predict:
                 await fit_or_predict(
-                    template_type='predict',
+                    template_type=f'predict_{template_type}',
                     df=df,
                     ticker=selected_ticker
                 )

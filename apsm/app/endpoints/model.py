@@ -191,7 +191,7 @@ async def predict_model(
     PredictResponse
         Предсказания в виде списка значений.
     """
-    n_periods = request.n_periods
+    n_periods, future_forecast = int(request.n_periods), bool(request.future_forecast)
 
     if not ModelManager.model:
         logger.error('Модель не активна.')
@@ -201,16 +201,26 @@ async def predict_model(
         )
 
     try:
-        if hasattr(ModelManager.model, 'forecast'):
-            forecast = ModelManager.model.forecast(steps=n_periods)
-        elif hasattr(ModelManager.model, 'predict'):
-            forecast = ModelManager.model.predict(n_periods=n_periods)
+        if future_forecast:
+            if hasattr(ModelManager.model, 'forecast'):
+                forecast = ModelManager.model.forecast(steps=n_periods)
+            elif hasattr(ModelManager.model, 'predict'):
+                forecast = ModelManager.model.predict(n_periods=n_periods)
+            else:
+                logger.error('Неподдерживаемый тип модели.')
+                raise HTTPException(
+                    status_code=400,
+                    detail='Неподдерживаемый тип модели.'
+                )
         else:
-            logger.error('Неподдерживаемый тип модели.')
-            raise HTTPException(
-                status_code=400,
-                detail='Неподдерживаемый тип модели.'
-            )
+            if hasattr(ModelManager.model, 'predict'):
+                forecast = ModelManager.model.predict(start=0, end=n_periods - 1)
+            else:
+                logger.error('Неподдерживаемый тип модели.')
+                raise HTTPException(
+                    status_code=400,
+                    detail='Неподдерживаемый тип модели.'
+                )
 
         return PredictResponse(forecast=forecast.tolist())
 

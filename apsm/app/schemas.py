@@ -33,6 +33,7 @@ class FitResponse(BaseModel):
 
 class PredictRequest(BaseModel):
     n_periods: int
+    future_forecast: bool = True
 
 
 class PredictResponse(BaseModel):
