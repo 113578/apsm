@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+    base:
+        build:
+            context: .
+            dockerfile: ./apsm/Dockerfile
+        image: base
+
+    fastapi:
+        build:
+            context: .
+            dockerfile: ./apsm/app/Dockerfile
+        depends_on:
+            - base
+        ports:
+            - '8000:8000'
+        environment:
+            - PYTHONPATH=/usr/src/app
+        volumes:
+            - ./logs:/usr/src/app/logs
+            - ./models:/usr/src/app/models
+
+    streamlit:
+        build:
+            context: .
+            dockerfile: ./apsm/streamlit_app/Dockerfile
+        depends_on:
+            - base
+            - fastapi
+        ports:
+            - '8501:8501'
+        environment:
+            - PYTHONPATH=/usr/src/app
+            - STREAMLIT_BASE_URL=http://fastapi:8000
+        volumes:
+            - ./logs:/usr/src/app/logs
+            - ./models:/usr/src/app/models
+
