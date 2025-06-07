@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import plotly
 import plotly.express as px
-from ..app.schemas import ModelType
-from ..utils import setup_logger
-from ..app import data_preprocessing
+from apsm.app.schemas import ModelType
+from apsm.utils import setup_logger
+from apsm.app import data_preprocessing
 
 
 logger = setup_logger(
