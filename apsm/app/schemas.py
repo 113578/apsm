@@ -12,6 +12,7 @@ from pydantic import BaseModel
 class ModelType(str, Enum):
     auto_arima = 'auto_arima'
     holt_winters = 'holt_winters'
+    pretrained = 'pretrained'
 
 
 class ModelConfig(BaseModel):

@@ -1,9 +1,11 @@
 import os
 import traceback
+import pickle as pkl
 from http import HTTPStatus
 
 import joblib
 import pandas as pd
+import lightgbm
 from typing_extensions import Annotated
 from fastapi import APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -80,6 +82,9 @@ async def fit(
                         status_code=400,
                         detail=f"Параметр '{param}' обязателен."
                     )
+        elif model_type == ModelType.pretrained:
+            with open('', 'rb') as file:
+                model = pkl.load(file)
 
             trend = config['trend']
             seasonal = config['seasonal']
@@ -295,6 +300,7 @@ async def set_active_model(
     ModelManager.model = joblib.load(model_path)
 
     logger.info('Модель %s активна.', model_id)
+
     return SetResponse(message=f'Модель {model_id} активна.')
 
 
@@ -322,4 +328,5 @@ async def remove_all() -> RemoveResponse:
                 os.remove(file_path)
 
     logger.info('Все модели удалены!')
+
     return RemoveResponse(message='Все модели удалены!')
