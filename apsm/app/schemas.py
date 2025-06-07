@@ -36,6 +36,7 @@ class FitResponse(BaseModel):
 class PredictRequest(BaseModel):
     n_periods: int
     future_forecast: bool = True
+    data: List[float]
 
 
 class PredictResponse(BaseModel):

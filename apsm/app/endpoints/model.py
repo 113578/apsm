@@ -24,7 +24,6 @@ from apsm.app.schemas import (
 )
 from apsm.app.data_preprocessing import preprocess_time_series, extract_time_series_features
 
-
 logger = setup_logger(
     name='api',
     log_file=os.getenv('PYTHONPATH') + '/logs/api.log'
@@ -173,7 +172,7 @@ async def predict_model(
             df = pd.DataFrame({'value': data})
             df['Date'] = pd.date_range(start='2023-01-01', periods=len(data), freq='D')
             features = extract_time_series_features(df[['Date', 'value']])
-            X = features.values[-len(data):]  # последние n значений
+            X = features.values[-len(data):, 1:]  # последние n значений
             forecast = ModelManager.model.predict(X)[:n_periods]
             return PredictResponse(forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast))
         elif future_forecast:

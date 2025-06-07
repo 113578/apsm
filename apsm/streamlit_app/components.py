@@ -7,9 +7,9 @@ import pandas as pd
 import numpy as np
 import plotly
 import plotly.express as px
-from apsm.app.schemas import ModelType
-from apsm.utils import setup_logger
-from apsm.app import data_preprocessing
+from ..app.schemas import ModelType
+from ..utils import setup_logger
+from ..app import data_preprocessing
 
 
 logger = setup_logger(
@@ -17,7 +17,7 @@ logger = setup_logger(
     log_file=os.getenv('PYTHONPATH') + '/logs/streamlit.log'
 )
 
-base_url = os.getenv('STREAMLIT_BASE_URL', 'http://fastapi:8000')
+base_url = 'http://127.0.0.1:8000'
 
 
 def get_analytics(
@@ -180,13 +180,14 @@ async def inference_model(
         Отображает график предсказаний или сообщение об ошибке в интерфейсе Streamlit.
     """
     url = f'{base_url}/predict'
-
+    
     payload = {
         'n_periods': period
     }
-    if selected_model == 'catboost':
+    
+    if selected_model == 'catboost_pretrained':
         payload['data'] = df[ticker].values.tolist()
-
+    
     start = df.index[-1] + pd.DateOffset(days=1)
 
     async with httpx.AsyncClient() as client:
@@ -223,9 +224,11 @@ async def inference_model(
                     'Ошибка при отправке запроса: %s',
                     error_message
                 )
+        
         if predictions is not None:
             st.subheader('График остатков')
-            fig = get_figure(df[ticker] - predictions, ticker, 'residuals')
+            
+            fig = get_figure(df[ticker][30:] - predictions, ticker, 'residuals')
             st.plotly_chart(fig)
 
 
@@ -304,16 +307,13 @@ def clean_data(
     pd.DataFrame
         Очищенные данные.
     """
-    if template_type == 'Котировки валют':
-        df.dropna(inplace=True)
-        df = df.filter(regex='Close', axis=1)
-        df.columns = (col[: col.find('=')] for col in df.columns)
-        cleaned_df = df.loc[:, (df == 0).sum() < 4][:-3]
-    else:
-        cleaned_df = df.loc[:, (df.isnull()).sum() < 115]
-        cleaned_df.dropna(inplace=True)
+    half_cols = len(df) // 2
+    cols_to_drop = [col for col in df.columns if df[col].isna().sum() > half_cols]
+    df = df.drop(columns=cols_to_drop)
 
-    return cleaned_df
+    half_rows = len(df.columns) // 2
+    rows_to_drop = df[df.isna().sum(axis=1) > half_rows].index
+    return df.drop(index=rows_to_drop)
 
 
 def upload_file(
@@ -342,7 +342,6 @@ def upload_file(
     if uploaded_file:
         df = pd.read_parquet(uploaded_file, engine='pyarrow')
         cleaned_df = clean_data(df, template_type)
-
         return cleaned_df, True
 
     return None, False
@@ -370,7 +369,6 @@ def select_ticker(
     is_currency = int(template_type == 'Котировки валют')
     st.sidebar.header('Выбор тикера')
     options = df.columns
-
     search_term = st.sidebar.text_input(
         'Поиск:',
         placeholder=f"""
@@ -545,7 +543,8 @@ async def fit_or_predict(
                 await inference_model(
                     df=df,
                     ticker=ticker,
-                    period=int(selected_period)
+                    period=int(selected_period),
+                    selected_model=selected_model
                 )
 
 
