@@ -3,7 +3,8 @@ from typing import (
     List,
     Dict,
     Optional,
-    Union
+    Union,
+    Any
 )
 
 from pydantic import BaseModel
@@ -12,7 +13,7 @@ from pydantic import BaseModel
 class ModelType(str, Enum):
     auto_arima = 'auto_arima'
     holt_winters = 'holt_winters'
-    pretrained = 'pretrained'
+    catboost = 'catboost'
 
 
 class ModelConfig(BaseModel):
@@ -67,7 +68,3 @@ class LoadRequest(BaseModel):
 
 class LoadResponse(BaseModel):
     message: str
-
-
-class ModelManager(BaseModel):
-    model: str = None

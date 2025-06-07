@@ -9,6 +9,7 @@ import plotly
 import plotly.express as px
 from apsm.app.schemas import ModelType
 from apsm.utils import setup_logger
+from apsm.app import data_preprocessing
 
 
 logger = setup_logger(
@@ -61,9 +62,9 @@ async def train_model(
     df: pd.DataFrame,
     model_id: str,
     selected_model: str,
-    trend: str,
-    seasonal: str,
-    seasonal_periods: int
+    trend: str = None,
+    seasonal: str = None,
+    seasonal_periods: int = None
 ) -> None:
     """
     Запуск обучения модели прогнозирования с заданными параметрами.
@@ -111,6 +112,7 @@ async def train_model(
             message = response.json()['message']
             st.write(message)
             logger.info(message)
+
         else:
             error_message = response.text
             st.error(f'Ошибка при отправке запроса: {error_message}')
@@ -157,7 +159,8 @@ def get_figure(
 async def inference_model(
     df: pd.DataFrame,
     ticker: str,
-    period: int
+    period: int,
+    selected_model: str = None
 ) -> None:
     """
     Проведение прогнозирования с использованием обученной модели.
@@ -177,20 +180,25 @@ async def inference_model(
         Отображает график предсказаний или сообщение об ошибке в интерфейсе Streamlit.
     """
     url = f'{base_url}/predict'
+
     payload = {
         'n_periods': period
     }
+    if selected_model == 'catboost':
+        payload['data'] = df[ticker].values.tolist()
+
     start = df.index[-1] + pd.DateOffset(days=1)
 
     async with httpx.AsyncClient() as client:
+        predictions = None
         for i in range(2):
             if i == 1:
                 period = df.shape[0]
                 start = df.index[0]
-                payload = {
-                    'n_periods': period,
-                    'future_forecast': True
-                }
+                payload['n_periods'] = period
+                payload['future_forecast'] = True
+                if selected_model == 'catboost':
+                    payload['data'] = df[ticker].values.tolist()
             response = await client.post(url, json=payload)
             if response.status_code == 200:
                 predictions = response.json()['forecast']
@@ -208,7 +216,6 @@ async def inference_model(
                     name='Predictions',
                 )
                 st.plotly_chart(fig)
-
             else:
                 error_message = response.text
                 st.error(f'Ошибка при отправке запроса: {error_message}')
@@ -216,10 +223,10 @@ async def inference_model(
                     'Ошибка при отправке запроса: %s',
                     error_message
                 )
-
-        st.subheader('График остатков')
-        fig = get_figure(df[ticker] - predictions, ticker, 'residuals')
-        st.plotly_chart(fig)
+        if predictions is not None:
+            st.subheader('График остатков')
+            fig = get_figure(df[ticker] - predictions, ticker, 'residuals')
+            st.plotly_chart(fig)
 
 
 
@@ -540,6 +547,26 @@ async def fit_or_predict(
                     ticker=ticker,
                     period=int(selected_period)
                 )
+
+
+def preprocess_input_for_catboost(df: pd.DataFrame, ticker: str, is_currency: bool) -> pd.DataFrame:
+    """
+    Предобработка данных для catboost с помощью функций из data_preprocessing.py.
+    """
+    # Используем функции из data_preprocessing.py
+    # Пример: только для одного тикера, как в ноутбуке
+    df = df[[ticker]].copy()
+    df['Date'] = df.index
+    df['ticker'] = ticker
+    # Применяем preprocess_time_series (только transform, без fit)
+    df_proc, transformers = data_preprocessing.preprocess_time_series(
+        df, target=ticker, is_train=True
+    )
+    # Извлекаем признаки
+    features = data_preprocessing.extract_time_series_features(
+        df_proc.reset_index()[['Date', ticker]].rename(columns={ticker: 'value'})
+    )
+    return features
 
 
 async def create_template(
