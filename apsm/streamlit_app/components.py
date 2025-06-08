@@ -182,11 +182,9 @@ async def inference_model(
     url = f'{base_url}/predict'
     
     payload = {
-        'n_periods': period
+        'n_periods': period,
+        'data': df[ticker].values.tolist()
     }
-    
-    if selected_model == 'catboost_pretrained':
-        payload['data'] = df[ticker].values.tolist()
     
     start = df.index[-1] + pd.DateOffset(days=1)
 
@@ -198,8 +196,7 @@ async def inference_model(
                 start = df.index[0]
                 payload['n_periods'] = period
                 payload['future_forecast'] = True
-                if selected_model == 'catboost':
-                    payload['data'] = df[ticker].values.tolist()
+                payload['data'] = df[ticker].values.tolist()
             response = await client.post(url, json=payload)
             if response.status_code == 200:
                 predictions = response.json()['forecast']
@@ -227,8 +224,13 @@ async def inference_model(
 
         if predictions is not None:
             st.subheader('График остатков')
-            
-            fig = get_figure(df[ticker][30:] - predictions, ticker, 'residuals')
+            # Приводим длины к минимальной
+            actual = df[ticker]
+            min_len = min(len(actual), len(predictions))
+            actual = actual.iloc[-min_len:]
+            predictions = np.array(predictions)[-min_len:]
+            residuals = actual - predictions
+            fig = get_figure(residuals, ticker, 'residuals')
             st.plotly_chart(fig)
 
 

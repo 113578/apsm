@@ -5,6 +5,7 @@ from http import HTTPStatus
 
 import joblib
 import pandas as pd
+import numpy as np
 from typing_extensions import Annotated
 from fastapi import APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
@@ -22,7 +23,14 @@ from apsm.app.schemas import (
     SetRequest,
     SetResponse
 )
-from apsm.app.data_preprocessing import preprocess_time_series, extract_time_series_features
+from apsm.app.data_preprocessing import (
+    preprocess_time_series,
+    extract_time_series_features,
+    inverse_preprocess_time_series
+)
+
+with open('models/transformers_train.pkl', 'rb') as file:
+    transformers_train = pkl.load(file)
 
 logger = setup_logger(
     name='api',
@@ -52,6 +60,7 @@ async def fit(
     model_type = request.config.ml_model_type
     data = request.data
     config = request.config.hyperparameters or {}
+
     # Для catboost определяем тип данных
     data_type = 'currency' if 'currency' in model_id else 'stock'
     model_path = get_model_path(model_id, model_type.value, data_type)
@@ -66,8 +75,10 @@ async def fit(
     try:
         if model_type == ModelType.auto_arima:
             ModelManager.model = auto_arima(data)
+
         elif model_type == ModelType.holt_winters:
             required_params = ['trend', 'seasonal', 'seasonal_periods']
+
             for param in required_params:
                 if param not in config:
                     logger.error("Параметра '%s' обязателен.", param)
@@ -75,6 +86,7 @@ async def fit(
                         status_code=400,
                         detail=f"Параметр '{param}' обязателен."
                     )
+
             trend = config['trend']
             seasonal = config['seasonal']
             seasonal_periods = config['seasonal_periods']
@@ -92,6 +104,7 @@ async def fit(
                 seasonal=seasonal,
                 seasonal_periods=seasonal_periods
             ).fit()
+
         elif model_type == ModelType.catboost:
             # Для catboost используем предобученную модель, обучение не требуется
             catboost_path = get_model_path(model_id, 'catboost', data_type)
@@ -158,28 +171,46 @@ async def predict_model(
         )
 
     try:
-        if hasattr(ModelManager.model, 'predict') and hasattr(ModelManager.model, 'load_model'):
+        if hasattr(ModelManager.model, 'predict') and hasattr(ModelManager.model, 'shrink'):
             # CatBoost: ожидаем, что данные для прогноза будут в request.data
             data = getattr(request, 'data', None)
+
             if data is None:
                 logger.error('Для CatBoost необходимо передать данные для предсказания.')
                 raise HTTPException(
                     status_code=400,
                     detail='Для CatBoost необходимо передать данные для предсказания.'
                 )
+
             # Предобработка данных для catboost
-            import numpy as np
             df = pd.DataFrame({'value': data})
-            df['Date'] = pd.date_range(start='2023-01-01', periods=len(data), freq='D')
+            df['Date'] = pd.date_range(start='2022-01-01', periods=len(data), freq='D')
+
             features = extract_time_series_features(df[['Date', 'value']])
-            X = features.values[-len(data):, 1:]  # последние n значений
-            forecast = ModelManager.model.predict(X)[:n_periods]
+            print(features.columns)
+            features['ticker'] = 'USDRUB'
+            features, _ = preprocess_time_series(df=features, target='target', transformers=transformers_train)
+            print(features)
+            # Исправление: гарантируем, что X и n_periods согласованы
+            if features.shape[0] < n_periods:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Недостаточно данных для прогноза: признаков {features.shape[0]}, требуется {n_periods}"
+                )
+            X = features.values[-n_periods:, 1:]  # последние n_periods строк
+            forecast = ModelManager.model.predict(X[:-1])
+            forecast = inverse_preprocess_time_series(ts_transformed=forecast, transformers=transformers_train)
+
+
             return PredictResponse(forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast))
+
         elif future_forecast:
             if hasattr(ModelManager.model, 'forecast'):
                 forecast = ModelManager.model.forecast(steps=n_periods)
+                print(forecast)
             elif hasattr(ModelManager.model, 'predict'):
                 forecast = ModelManager.model.predict(n_periods=n_periods)
+                print(forecast)
             else:
                 logger.error('Неподдерживаемый тип модели.')
                 raise HTTPException(
@@ -195,6 +226,8 @@ async def predict_model(
                     status_code=400,
                     detail='Неподдерживаемый тип модели.'
                 )
+            
+        print(forecast)
         return PredictResponse(forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast))
 
     except Exception as e:
