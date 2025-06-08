@@ -9,7 +9,6 @@ import plotly
 import plotly.express as px
 from apsm.app.schemas import ModelType
 from apsm.utils import setup_logger
-from apsm.app import data_preprocessing
 
 
 logger = setup_logger(
@@ -22,21 +21,22 @@ base_url = os.getenv('STREAMLIT_BASE_URL', 'http://fastapi:8000')
 
 def get_analytics(
     df: pd.DataFrame,
-    template_type: str,
     selected_ticker: str
 ) -> None:
     '''
-    Получение аналитики по загруженному файлу.
+    Отображает статистику и график по выбранному тикеру из загруженного файла в интерфейсе Streamlit.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Загруженный файл.
+        Загруженный файл с данными.
+    selected_ticker : str
+        Выбранный тикер для анализа.
 
     Returns
     -------
-    analytics : pd.DataFrame
-        Кадр данных, содержащий аналитику.
+    None
+        Отображает аналитику в Streamlit.
     '''
     st.subheader('Статистика кадра данных')
     a, b, c = st.columns(3)
@@ -62,6 +62,7 @@ async def train_model(
     df: pd.DataFrame,
     model_id: str,
     selected_model: str,
+    data_type: str,
     trend: str = None,
     seasonal: str = None,
     seasonal_periods: int = None
@@ -94,7 +95,8 @@ async def train_model(
         'data': df.values.tolist(),
         'config': {
             'id': model_id,
-            'ml_model_type': selected_model
+            'ml_model_type': selected_model,
+            'data_type': data_type
         }
     }
 
@@ -126,10 +128,9 @@ def get_figure(
     df: pd.DataFrame,
     ticker: str,
     y_title: str = 'Price'
-
 ) -> plotly.graph_objs.Figure:
     """
-    Генерация графика на основе данных.
+    Генерирует график временного ряда по тикеру.
 
     Parameters
     ----------
@@ -138,13 +139,14 @@ def get_figure(
     ticker : str
         Название тикера для отображения.
     y_title: str
-        Название оси y
+        Название оси y.
 
     Returns
     -------
     fig : plotly.graph_objs.Figure
         Объект графика для отображения.
     """
+    df.iloc[-1, :] = df[f'{ticker}'].mean()
     fig = px.line(df, x=df.index, y=f'{ticker}', title=ticker)
 
     fig.update_layout(
@@ -159,8 +161,7 @@ def get_figure(
 async def inference_model(
     df: pd.DataFrame,
     ticker: str,
-    period: int,
-    selected_model: str = None
+    period: int
 ) -> None:
     """
     Проведение прогнозирования с использованием обученной модели.
@@ -180,12 +181,13 @@ async def inference_model(
         Отображает график предсказаний или сообщение об ошибке в интерфейсе Streamlit.
     """
     url = f'{base_url}/predict'
-    
+
     payload = {
         'n_periods': period,
-        'data': df[ticker].values.tolist()
+        'data': df[ticker].values.tolist(),
+        'ticker': ticker
     }
-    
+
     start = df.index[-1] + pd.DateOffset(days=1)
 
     async with httpx.AsyncClient() as client:
@@ -197,6 +199,7 @@ async def inference_model(
                 payload['n_periods'] = period
                 payload['future_forecast'] = True
                 payload['data'] = df[ticker].values.tolist()
+                payload['ticker'] = ticker
             response = await client.post(url, json=payload)
             if response.status_code == 200:
                 predictions = response.json()['forecast']
@@ -224,15 +227,14 @@ async def inference_model(
 
         if predictions is not None:
             st.subheader('График остатков')
-            # Приводим длины к минимальной
             actual = df[ticker]
             min_len = min(len(actual), len(predictions))
             actual = actual.iloc[-min_len:]
             predictions = np.array(predictions)[-min_len:]
             residuals = actual - predictions
+            residuals = pd.DataFrame(residuals)
             fig = get_figure(residuals, ticker, 'residuals')
             st.plotly_chart(fig)
-
 
 
 async def get_list_models() -> pd.DataFrame:
@@ -256,13 +258,12 @@ async def get_list_models() -> pd.DataFrame:
 
             return df
 
-        else:
-            error_message = response.text
-            st.error(f'Ошибка при отправке запроса: {error_message}')
-            logger.error(
-                'Ошибка при отправке запроса: %s',
-                error_message
-            )
+        error_message = response.text
+        st.error(f'Ошибка при отправке запроса: {error_message}')
+        logger.error(
+            'Ошибка при отправке запроса: %s',
+            error_message
+        )
 
 
 async def delete_models() -> None:
@@ -292,17 +293,14 @@ async def delete_models() -> None:
 
 def clean_data(
     df: pd.DataFrame,
-    template_type: str
 ) -> pd.DataFrame:
     """
-    Очистка загруженных данных в зависимости от типа шаблона.
+    Очищает DataFrame: удаляет столбцы и строки с большим количеством пропусков.
 
     Parameters
     ----------
     df : pd.DataFrame
         Данные для очистки.
-    template_type : str
-        Тип шаблона ('Котировки валют' или другой тип).
 
     Returns
     -------
@@ -322,7 +320,7 @@ def upload_file(
     template_type: str
 ) -> Tuple[Union[pd.DataFrame, None], bool]:
     """
-    Загрузка файла через интерфейс Streamlit и его обработка.
+    Загружает parquet-файл через Streamlit и очищает его.
 
     Parameters
     ----------
@@ -332,8 +330,7 @@ def upload_file(
     Returns
     -------
     Tuple[Union[pd.DataFrame, None], bool]
-        Возвращает очищенные данные и флаг успешной загрузки.
-        Если файл не загружен, возвращает (None, False).
+        Очищенные данные и флаг успешной загрузки. Если файл не загружен, возвращает (None, False).
     """
     if template_type == 'Котировки валют':
         st.header('Загрузка котировок валют🔻')
@@ -343,7 +340,7 @@ def upload_file(
     uploaded_file = st.file_uploader(label='Загрузите файл', key=template_type)
     if uploaded_file:
         df = pd.read_parquet(uploaded_file, engine='pyarrow')
-        cleaned_df = clean_data(df, template_type)
+        cleaned_df = clean_data(df)
         return cleaned_df, True
 
     return None, False
@@ -354,7 +351,7 @@ def select_ticker(
     template_type: str
 ) -> Union[str, None]:
     """
-    Выбор тикера из предоставленных данных через боковую панель Streamlit.
+    Позволяет выбрать тикер из DataFrame через боковую панель Streamlit.
 
     Parameters
     ----------
@@ -366,7 +363,7 @@ def select_ticker(
     Returns
     -------
     Union[str, None]
-        Выбранный тикер, если он выбран, иначе None.
+        Выбранный тикер или None, если не выбран.
     """
     is_currency = int(template_type == 'Котировки валют')
     st.sidebar.header('Выбор тикера')
@@ -404,7 +401,7 @@ def select_ticker(
     return None
 
 
-async def set_active_model(model_id: str) -> None:
+async def set_active_model(model_id: str, data_type: str) -> None:
     """
     Установка активной модели на сервере.
 
@@ -420,7 +417,8 @@ async def set_active_model(model_id: str) -> None:
     """
     url = f'{base_url}/set'
     payload = {
-        'id': model_id
+        'id': model_id,
+        'data_type': data_type
     }
 
     async with httpx.AsyncClient() as client:
@@ -447,12 +445,12 @@ async def fit_or_predict(
     ticker: str = None
 ):
     """
-    Выполнение обучения модели или прогнозирования в зависимости от типа шаблона.
+    В зависимости от типа шаблона запускает обучение модели или прогнозирование через Streamlit-интерфейс.
 
     Parameters
     ----------
     template_type : str
-        Тип операции ('fit' для обучения, 'predict' для прогнозирования).
+        Тип операции ('fit_...' для обучения, 'predict_...' для прогнозирования).
     df : pd.DataFrame
         Данные для обработки.
     ticker : str, optional
@@ -461,8 +459,9 @@ async def fit_or_predict(
     Returns
     -------
     None
-        Выполняет задачу обучения или прогнозирования и отображает результаты.
+        Отображает результаты в Streamlit.
     """
+    data_type = template_type.split('_')[1]
     template_type, is_currency = template_type.split('_')[0], int(template_type.split('_')[1] == 'Котировки валют')
 
     if template_type == 'fit':
@@ -508,11 +507,12 @@ async def fit_or_predict(
                 await train_model(
                     df=df,
                     model_id=model_id,
+                    data_type=data_type,
                     selected_model=selected_model,
                     trend=selected_trend,
                     seasonal=selected_seasonal,
                     seasonal_periods=seasonal_periods
-                    )
+                )
     else:
         st.header('Инференс модели 🔥')
         list_models = await get_list_models()
@@ -541,33 +541,13 @@ async def fit_or_predict(
                 'Предсказать!',
                 key=f"predict{is_currency}"
             ) and selected_period:
-                await set_active_model(model_id=selected_model)
+                print(data_type)
+                await set_active_model(model_id=selected_model, data_type=data_type)
                 await inference_model(
                     df=df,
                     ticker=ticker,
-                    period=int(selected_period),
-                    selected_model=selected_model
+                    period=int(selected_period)
                 )
-
-
-def preprocess_input_for_catboost(df: pd.DataFrame, ticker: str, is_currency: bool) -> pd.DataFrame:
-    """
-    Предобработка данных для catboost с помощью функций из data_preprocessing.py.
-    """
-    # Используем функции из data_preprocessing.py
-    # Пример: только для одного тикера, как в ноутбуке
-    df = df[[ticker]].copy()
-    df['Date'] = df.index
-    df['ticker'] = ticker
-    # Применяем preprocess_time_series (только transform, без fit)
-    df_proc, transformers = data_preprocessing.preprocess_time_series(
-        df, target=ticker, is_train=True
-    )
-    # Извлекаем признаки
-    features = data_preprocessing.extract_time_series_features(
-        df_proc.reset_index()[['Date', ticker]].rename(columns={ticker: 'value'})
-    )
-    return features
 
 
 async def create_template(
@@ -575,7 +555,7 @@ async def create_template(
     template_type: Literal['Котировки валют', 'Акции']
 ) -> None:
     """
-    Создание шаблона приложения.
+    Управляет загрузкой файла, выбором тикера и отображением аналитики, обучения и прогнозирования в Streamlit.
 
     Parameters
     ----------
@@ -587,8 +567,7 @@ async def create_template(
     Returns
     -------
     None
-        Управляет загрузкой файла, выбором тикера и последующими действиями
-        (обучение модели или прогнозирование).
+        Управляет логикой пользовательского интерфейса Streamlit.
     """
     df, is_uploaded = upload_file(template_type=template_type)
 
@@ -603,7 +582,6 @@ async def create_template(
             st.header('Аналитика файла 📊')
             get_analytics(
                 df=df,
-                template_type=template_type,
                 selected_ticker=selected_ticker
             )
 

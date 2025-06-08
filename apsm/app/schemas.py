@@ -4,7 +4,6 @@ from typing import (
     Dict,
     Optional,
     Union,
-    Any
 )
 
 from pydantic import BaseModel
@@ -19,6 +18,7 @@ class ModelType(str, Enum):
 class ModelConfig(BaseModel):
     id: str
     ml_model_type: ModelType
+    data_type: str
     hyperparameters: Optional[
         Dict[str, Union[str, bool, int, float]]
     ] = None
@@ -37,6 +37,7 @@ class PredictRequest(BaseModel):
     n_periods: int
     future_forecast: bool = True
     data: List[float]
+    ticker: str
 
 
 class PredictResponse(BaseModel):
@@ -57,6 +58,7 @@ class StatusResponse(BaseModel):
 
 class SetRequest(BaseModel):
     id: str
+    data_type: str
 
 
 class SetResponse(BaseModel):

@@ -6,7 +6,7 @@ from components import create_template
 
 async def main():
     """
-    Запуск кода на Streamlit.
+    Запускает основной цикл Streamlit-приложения, отображает вкладки для валют и акций.
     """
     is_uploaded = True
 

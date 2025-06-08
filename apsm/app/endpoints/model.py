@@ -1,17 +1,20 @@
 import os
 import traceback
 import pickle as pkl
+import shutil
 from http import HTTPStatus
 
 import joblib
 import pandas as pd
-import numpy as np
 from typing_extensions import Annotated
 from fastapi import APIRouter, HTTPException
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from pmdarima import auto_arima
-from catboost import CatBoostRegressor
-from apsm.utils import setup_logger, get_model_path
+from apsm.utils import (
+    setup_logger,
+    get_model_path,
+    get_transformer_path
+)
 from apsm.app.schemas import (
     ModelType,
     FitRequest,
@@ -29,8 +32,6 @@ from apsm.app.data_preprocessing import (
     inverse_preprocess_time_series
 )
 
-with open('models/transformers_train.pkl', 'rb') as file:
-    transformers_train = pkl.load(file)
 
 logger = setup_logger(
     name='api',
@@ -40,9 +41,10 @@ logger = setup_logger(
 model_router = APIRouter()
 
 
-# Глобальный менеджер модели для хранения активной ML-модели
+# Глобальный менеджер модели для хранения активной ML-модели.
 class ModelManager:
     model = None
+    data_type: str
 
 
 @model_router.post(
@@ -56,13 +58,30 @@ async def fit(
         'Схема запроса для обучения модели.'
     ]
 ) -> FitResponse:
+    """
+    Обучает модель на предоставленных данных и сохраняет её. Если модель уже существует, возвращает ошибку.
+
+    Parameters
+    ----------
+    request : FitRequest
+        Запрос, содержащий конфигурацию модели, данные и гиперпараметры.
+
+    Returns
+    -------
+    FitResponse
+        Сообщение об успешном обучении и сохранении модели.
+
+    Raises
+    ------
+    HTTPException
+        Если модель уже существует, отсутствуют обязательные параметры или возникает ошибка обучения.
+    """
     model_id = request.config.id
     model_type = request.config.ml_model_type
     data = request.data
     config = request.config.hyperparameters or {}
+    data_type = request.config.data_type
 
-    # Для catboost определяем тип данных
-    data_type = 'currency' if 'currency' in model_id else 'stock'
     model_path = get_model_path(model_id, model_type.value, data_type)
 
     if model_path and model_type != ModelType.catboost:
@@ -75,6 +94,7 @@ async def fit(
     try:
         if model_type == ModelType.auto_arima:
             ModelManager.model = auto_arima(data)
+            ModelManager.data_type = data_type
 
         elif model_type == ModelType.holt_winters:
             required_params = ['trend', 'seasonal', 'seasonal_periods']
@@ -90,6 +110,7 @@ async def fit(
             trend = config['trend']
             seasonal = config['seasonal']
             seasonal_periods = config['seasonal_periods']
+
             data_series = pd.Series(
                 data=data,
                 index=pd.date_range(
@@ -98,24 +119,29 @@ async def fit(
                     freq=config.get('freq', 'D')
                 )
             )
+
             ModelManager.model = ExponentialSmoothing(
                 data_series,
                 trend=trend,
                 seasonal=seasonal,
                 seasonal_periods=seasonal_periods
             ).fit()
+            ModelManager.data_type = data_type
 
         elif model_type == ModelType.catboost:
-            # Для catboost используем предобученную модель, обучение не требуется
             catboost_path = get_model_path(model_id, 'catboost', data_type)
+
             if not catboost_path or not os.path.exists(catboost_path):
                 logger.error("CatBoost модель не найдена по пути %s", catboost_path)
                 raise HTTPException(
                     status_code=404,
                     detail=f"CatBoost модель не найдена по пути {catboost_path}"
                 )
-            ModelManager.model = CatBoostRegressor()
-            ModelManager.model.load_model(catboost_path)
+
+            with open(catboost_path, 'rb') as file:
+                ModelManager.model = pkl.load(file)
+            ModelManager.data_type = data_type
+
         else:
             logger.error('Неподдерживаемый тип модели.')
             raise HTTPException(
@@ -126,12 +152,13 @@ async def fit(
         if model_type == ModelType.auto_arima:
             os.makedirs('models/auto_arima', exist_ok=True)
             joblib.dump(ModelManager.model, f'models/auto_arima/{model_id}.joblib')
+
         elif model_type == ModelType.holt_winters:
             os.makedirs('models/holt_winters', exist_ok=True)
             joblib.dump(ModelManager.model, f'models/holt_winters/{model_id}.joblib')
-        # Для catboost не сохраняем модель, она уже предобучена
 
         logger.info("Модель '%s' успешно обучена и сохранена.", model_id)
+
         return FitResponse(
             message=f"Модель '{model_id}' успешно обучена и сохранена."
         )
@@ -139,6 +166,7 @@ async def fit(
     except Exception as e:
         traceback_text = traceback.format_exc()
         logger.error("Ошибка обучения модели '%s': %s", model_id, traceback_text)
+
         raise HTTPException(
             status_code=500,
             detail={
@@ -160,8 +188,27 @@ async def predict_model(
         'Схема запроса для предсказаний моделью.'
     ]
 ) -> PredictResponse:
+    """
+    Выполняет предсказание с помощью активной модели.
+
+    Parameters
+    ----------
+    request : PredictRequest
+        Запрос, содержащий параметры для предсказания (количество периодов, данные и др.).
+
+    Returns
+    -------
+    PredictResponse
+        Результаты предсказания.
+
+    Raises
+    ------
+    HTTPException
+        Если модель не активна или возникает ошибка предсказания.
+    """
     n_periods = int(request.n_periods)
     future_forecast = bool(getattr(request, 'future_forecast', True))
+    ticker = request.ticker
 
     if not ModelManager.model:
         logger.error('Модель не активна.')
@@ -172,8 +219,12 @@ async def predict_model(
 
     try:
         if hasattr(ModelManager.model, 'predict') and hasattr(ModelManager.model, 'shrink'):
-            # CatBoost: ожидаем, что данные для прогноза будут в request.data
             data = getattr(request, 'data', None)
+            data_type = ModelManager.data_type
+            transformers = get_transformer_path(data_type=data_type)
+
+            with open(transformers, 'rb') as file:
+                transformers = pkl.load(file)
 
             if data is None:
                 logger.error('Для CatBoost необходимо передать данные для предсказания.')
@@ -182,56 +233,57 @@ async def predict_model(
                     detail='Для CatBoost необходимо передать данные для предсказания.'
                 )
 
-            # Предобработка данных для catboost
             df = pd.DataFrame({'value': data})
             df['Date'] = pd.date_range(start='2022-01-01', periods=len(data), freq='D')
 
             features = extract_time_series_features(df[['Date', 'value']])
-            print(features.columns)
-            features['ticker'] = 'USDRUB'
-            features, _ = preprocess_time_series(df=features, target='target', transformers=transformers_train)
-            print(features)
-            # Исправление: гарантируем, что X и n_periods согласованы
-            if features.shape[0] < n_periods:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Недостаточно данных для прогноза: признаков {features.shape[0]}, требуется {n_periods}"
-                )
-            X = features.values[-n_periods:, 1:]  # последние n_periods строк
-            forecast = ModelManager.model.predict(X[:-1])
-            forecast = inverse_preprocess_time_series(ts_transformed=forecast, transformers=transformers_train)
+            features['ticker'] = ticker
+            features, _ = preprocess_time_series(df=features, target='target', transformers=transformers)
 
+            max_periods = features.shape[0]
+            n_periods = min(n_periods, max_periods)
 
-            return PredictResponse(forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast))
+            X = features.values[-n_periods:, 1:]
 
-        elif future_forecast:
+            forecast = ModelManager.model.predict(X)
+            forecast = inverse_preprocess_time_series(ts_transformed=forecast, transformers=transformers)
+
+            return PredictResponse(
+                forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast)
+            )
+
+        if future_forecast:
             if hasattr(ModelManager.model, 'forecast'):
                 forecast = ModelManager.model.forecast(steps=n_periods)
-                print(forecast)
+
             elif hasattr(ModelManager.model, 'predict'):
                 forecast = ModelManager.model.predict(n_periods=n_periods)
-                print(forecast)
+
             else:
                 logger.error('Неподдерживаемый тип модели.')
                 raise HTTPException(
                     status_code=400,
                     detail='Неподдерживаемый тип модели.'
                 )
+
         else:
             if hasattr(ModelManager.model, 'predict'):
                 forecast = ModelManager.model.predict(start=0, end=n_periods - 1)
+
             else:
                 logger.error('Неподдерживаемый тип модели.')
                 raise HTTPException(
                     status_code=400,
                     detail='Неподдерживаемый тип модели.'
                 )
-            
-        print(forecast)
-        return PredictResponse(forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast))
+
+        return PredictResponse(
+            forecast=forecast.tolist() if hasattr(forecast, 'tolist') else list(forecast)
+        )
 
     except Exception as e:
         logger.error('Ошибка предсказания: %s', str(e))
+
         raise HTTPException(
             status_code=500,
             detail=f'Ошибка предсказания: {str(e)}'
@@ -245,7 +297,7 @@ async def predict_model(
 )
 async def list_models() -> ModelListResponse:
     """
-    Получение списка всех сохраненных моделей.
+    Получение списка всех сохранённых моделей.
 
     Returns
     -------
@@ -261,10 +313,12 @@ async def list_models() -> ModelListResponse:
         if os.path.exists(f'models/{model_type.value}')
         for model_id in os.listdir(f'models/{model_type.value}')
     ]
-    # Добавим catboost, если файл существует
+
     catboost_path = os.path.join('models', 'pretrained', 'classic', 'currency', 'cb.pkl')
+
     if os.path.exists(catboost_path):
         models_list.append({'id': 'catboost_pretrained', 'type': 'catboost'})
+
     return ModelListResponse(models=models_list)
 
 
@@ -279,46 +333,52 @@ async def set_active_model(
         ]
 ) -> SetResponse:
     """
-    Установка активной модели для выполнения операций.
+    Устанавливает активную модель для последующих операций.
 
     Parameters
     ----------
     request : SetRequest
-        Запрос, содержащий идентификатор модели для активации.
+        Запрос с идентификатором и типом данных модели для активации.
 
     Returns
     -------
     SetResponse
         Сообщение об успешной активации модели.
+
+    Raises
+    ------
+    HTTPException
+        Если модель не найдена.
     """
     model_id = request.id
-    # Определяем тип модели по id
+    data_type = request.data_type
+
     if model_id == 'catboost_pretrained':
         model_type = 'catboost'
-        # Попробовать оба типа данных
-        model_path = get_model_path(model_id, model_type, 'currency')
-        if not model_path:
-            model_path = get_model_path(model_id, model_type, 'stock')
+        model_path = get_model_path(model_id, model_type, data_type)
+
     else:
         model_type = None
         model_path = get_model_path(model_id, model_type)
 
     if not model_path:
         logger.error("Модель '%s' не найдена.", model_id)
+
         raise HTTPException(
             status_code=404,
             detail=f"Модель '{model_id}' не найдена."
         )
 
     if model_type == 'catboost':
-        # Открываем модель через pickle (joblib/pickle)
-        import pickle
         with open(model_path, 'rb') as f:
-            ModelManager.model = pickle.load(f)
+            ModelManager.model = pkl.load(f)
+            ModelManager.data_type = data_type
+
     else:
         ModelManager.model = joblib.load(model_path)
 
     logger.info('Модель %s активна.', model_id)
+
     return SetResponse(message=f'Модель {model_id} активна.')
 
 
@@ -329,20 +389,23 @@ async def set_active_model(
 )
 async def remove_all_models() -> RemoveResponse:
     """
-    Удаление всех сохраненных моделей.
+    Удаляет все сохранённые модели (кроме предобученной CatBoost).
 
     Returns
     -------
     RemoveResponse
         Сообщение об успешном удалении всех моделей.
     """
-    import shutil
     removed = []
     for folder in ['models/auto_arima', 'models/holt_winters']:
         if os.path.exists(folder):
             shutil.rmtree(folder)
             removed.append(folder)
-    # CatBoost предобученную модель не удаляем
+
     ModelManager.model = None
+
     logger.info('Все модели удалены: %s', removed)
-    return RemoveResponse(message='Все модели удалены (кроме предобученной CatBoost).')
+
+    return RemoveResponse(
+        message='Все модели удалены (кроме предобученной CatBoost).'
+    )

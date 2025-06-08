@@ -7,6 +7,7 @@ from sklearn.preprocessing import PowerTransformer, TargetEncoder
 
 RANDOM_STATE = 23
 
+
 def preprocess_time_series(
     df: pd.DataFrame,
     target: str,
@@ -20,10 +21,10 @@ def preprocess_time_series(
     is_train: bool = False
 ):
     """
-    Предобрабатывает временной ряд для столбца 'target' в DataFrame, изменяя только этот столбец,
-    с возможностью восстановления исходных значений. Учитывает data leakage.
+    Предобрабатывает временной ряд для столбца 'target' в DataFrame, изменяя только этот столбец.
+    Возвращает преобразованный DataFrame с индексом 'Date' и словарь трансформеров для обратного преобразования.
 
-    Параметры:
+    Parameters
     ----------
     df : pd.DataFrame
         Исходный DataFrame.
@@ -43,15 +44,13 @@ def preprocess_time_series(
         Размер окна для оконной нормализации.
     do_encode : bool
         Выполнять ли кодировку категориальных признаков.
-    is_train : bool, по умолчанию True
+    is_train : bool, по умолчанию False
         Флаг, указывающий, являются ли данные тренировочными.
 
-    Возвращает:
-    -----------
-    df_transformed : pd.DataFrame
-        Преобразованный DataFrame с только изменённым столбцом 'target'.
-    transformers : dict
-        Словарь с объектами трансформеров для восстановления значений.
+    Returns
+    -------
+    Tuple[pd.DataFrame, dict]
+        Преобразованный DataFrame (индекс 'Date') и словарь трансформеров для восстановления значений.
     """
     df_transformed = df.copy()
     ts = df_transformed[target].copy()
@@ -117,7 +116,6 @@ def preprocess_time_series(
         ts = (ts - rolled_mean) / (rolled_std + eps)
         ts = ts[window_size - 1:]
 
-
     df_transformed[target] = ts
     df_transformed.dropna(inplace=True)
 
@@ -147,8 +145,8 @@ def inverse_preprocess_time_series(
     Восстанавливает исходный временной ряд из преобразованного np.array,
     используя сохранённые параметры трансформаций, выполненных в функции preprocess_time_series.
 
-    Параметры:
-    -----------
+    Parameters
+    ----------
     ts_transformed : np.array
         Преобразованный временной ряд.
     transformers : dict
@@ -164,37 +162,37 @@ def inverse_preprocess_time_series(
     window_size : int, по умолчанию 10
         Размер окна для оконной нормализации.
 
-    Возвращает:
-    -----------
+    Returns
+    -------
     np.array
         Восстановленный временной ряд в исходных единицах измерения.
     """
     ts = ts_transformed.copy()
 
-    # 1. Обратная оконная нормализация
+    # Обратная оконная нормализация.
     if do_window_normalizing:
         eps = 1e-9
         rolled_mean = transformers.get('rolled_mean')
         rolled_std = transformers.get('rolled_std')
         init_values = transformers.get('window_init_values', np.array([]))
-        window = transformers.get('window')
 
         if rolled_mean is None or rolled_std is None:
             raise ValueError("Нет данных для обратной оконной нормализации.")
 
-        ts = ts * (rolled_std.values[window_size - 1:window_size - 1 + len(ts)] + eps) + rolled_mean.values[window_size - 1:window_size - 1 + len(ts)]
+        ts = ts * (rolled_std.values[window_size - 1:window_size - 1 + len(ts)] + eps)\
+                 + rolled_mean.values[window_size - 1:window_size - 1 + len(ts)]
         ts = np.concatenate([init_values, ts])
 
-    # 2. Обратное Yeo-Johnson
+    # Обратное Yeo-Johnson.
     if do_yeo_johnson and 'yeo_johnson' in transformers:
         pt = transformers['yeo_johnson']
         ts = pt.inverse_transform(ts.reshape(-1, 1)).flatten()
 
-    # 3. Обратное дифференцирование
+    # Обратное дифференцирование.
     if do_diff and 'last_value' in transformers:
         ts = np.cumsum(ts, dtype=np.float64) + transformers['last_value']
 
-    # 4. Обратное масштабирование
+    # Обратное масштабирование.
     if do_scale and 'scaler' in transformers:
         scaler = transformers['scaler']
         ts = scaler.inverse_transform(ts.reshape(-1, 1)).flatten()
@@ -209,29 +207,24 @@ def extract_time_series_features(
     fourier_windows=[30]
 ):
     """
-    Извлекает расширенные признаки из временного ряда.
+    Извлекает расширенные признаки из временного ряда. Требует, чтобы дата была в колонке 'Date'.
 
-    Parameters:
-    -----------
-    df : pd.Series
-        Временной ряд (с индексом 'Date') или DataFrame, содержащий колонку со значениями.
+    Parameters
+    ----------
+    df : pd.Series или pd.DataFrame
+        Временной ряд (с колонкой 'Date').
     lags : list of int, по умолчанию [1, 2, 3, 4, 5]
         Лаги для расчета лаговых и разностных признаков.
     rolling_windows : list of int, по умолчанию [7, 30]
-        Окна для расчета скользящих статистик (среднее, std, min, max, медиана, квантили).
+        Окна для расчета скользящих статистик (mean, std, min, max, медиана, квантили).
     fourier_windows : list of int, по умолчанию [30]
         Окна для расчета признаков на основе FFT (доминирующая частота).
 
-    Returns:
-    --------
+    Returns
+    -------
     pd.DataFrame
-        DataFrame с извлечёнными признаками, включая:
-        - календарные признаки (день недели, месяц, год, выходной),
-        - лаговые и разностные признаки,
-        - скользящие статистики (mean, std, min, max, median, quantiles),
-        - FFT-признаки (доминирующая частота),
-        - нарастающие групповые статистики по дню недели.
-    """ 
+        DataFrame с извлечёнными признаками. Требует, чтобы дата была в колонке 'Date'.
+    """
     if isinstance(df, pd.Series):
         df = df.to_frame(name='value')
     else:
@@ -319,8 +312,7 @@ def split_time_series(
         df: pd.DataFrame,
         ticker_name: str,
         train_size=0.7,
-        val_size=0.2,
-        test_size=0.1
+        val_size=0.2
 ):
     """
     Разбивает отсортированный временной ряд на обучающую, валидационную и тестовую выборки.
@@ -334,8 +326,6 @@ def split_time_series(
         Пропорция обучающей выборки.
       val_size : float
         Пропорция валидационной выборки.
-      test_size : float
-        Пропорция тестовой выборки.
 
     Returns:
       df_train, df_val, df_test : pd.DataFrame
@@ -343,7 +333,7 @@ def split_time_series(
     """
     df_train_list, df_val_list, df_test_list = [], [], []
 
-    for ticker, group in df.groupby('ticker'):
+    for _, group in df.groupby('ticker'):
         group = group.sort_values(by='Date')
 
         n = len(group)
@@ -364,9 +354,9 @@ def split_time_series(
 
 
 def read_data(
-        file_path: str,
-        file_type: str,
-        ticker_type: str
+    file_path: str,
+    file_type: str,
+    ticker_type: str
 ) -> pd.DataFrame:
     """
     Чтение и преобразование данных.
