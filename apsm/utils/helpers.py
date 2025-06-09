@@ -34,8 +34,9 @@ def get_model_path(model_id: str, model_type: Optional[str] = None, data_type: O
     """
     auto_arima_path = os.path.join('models', 'auto_arima', model_id + '.joblib')
     holt_winters_path = os.path.join('models', 'holt_winters', model_id + '.joblib')
-
-    if model_type == 'catboost':
+    catboost_path = os.path.join('models', 'catboost', model_id + '.joblib')
+    
+    if model_type == 'catboost' and model_id == 'catboost_pretrained':
         catboost_path = None
         if data_type == 'Котировки валют':
             catboost_path = os.path.join('models', 'pretrained', 'classic', 'currency', 'cb.pkl')
@@ -51,8 +52,11 @@ def get_model_path(model_id: str, model_type: Optional[str] = None, data_type: O
     if os.path.exists(auto_arima_path):
         return auto_arima_path
 
-    if os.path.exists(holt_winters_path):
+    elif os.path.exists(holt_winters_path):
         return holt_winters_path
+    
+    elif os.path.exists(catboost_path):
+        return catboost_path
 
     return None
 

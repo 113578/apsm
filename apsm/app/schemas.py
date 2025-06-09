@@ -27,6 +27,7 @@ class ModelConfig(BaseModel):
 class FitRequest(BaseModel):
     data: List[float]
     config: ModelConfig
+    ticker: str
 
 
 class FitResponse(BaseModel):

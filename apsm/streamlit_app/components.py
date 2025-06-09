@@ -9,7 +9,7 @@ import plotly
 import plotly.express as px
 from apsm.app.schemas import ModelType
 from apsm.utils import setup_logger
-
+import plotly.graph_objects as go
 
 logger = setup_logger(
     name='streamlit',
@@ -63,6 +63,7 @@ async def train_model(
     model_id: str,
     selected_model: str,
     data_type: str,
+    ticker: str,
     trend: str = None,
     seasonal: str = None,
     seasonal_periods: int = None
@@ -97,7 +98,8 @@ async def train_model(
             'id': model_id,
             'ml_model_type': selected_model,
             'data_type': data_type
-        }
+        },
+        'ticker': ticker
     }
 
     if selected_model == 'holt_winters':
@@ -108,7 +110,7 @@ async def train_model(
         }
 
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload)
+        response = await client.post(url, json=payload, timeout=60.0)
 
         if response.status_code == 201:
             message = response.json()['message']
@@ -146,13 +148,18 @@ def get_figure(
     fig : plotly.graph_objs.Figure
         Объект графика для отображения.
     """
-    df.iloc[-1, :] = df[f'{ticker}'].mean()
-    fig = px.line(df, x=df.index, y=f'{ticker}', title=ticker)
-
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df[ticker],
+            name='Actual', 
+            mode='lines'
+        )
+    )   
     fig.update_layout(
         xaxis_title='Date',
-        yaxis_title=y_title,
-        legend_title_text=f'{ticker}'
+        yaxis_title=y_title
     )
 
     return fig
@@ -198,20 +205,18 @@ async def inference_model(
                 start = df.index[0]
                 payload['n_periods'] = period
                 payload['future_forecast'] = True
-                payload['data'] = df[ticker].values.tolist()
-                payload['ticker'] = ticker
             response = await client.post(url, json=payload)
             if response.status_code == 200:
                 predictions = response.json()['forecast']
                 st.subheader('Результаты предсказания' + (" на обучающей выборке" if i == 1 else ""))
-
-                fig = get_figure(df, ticker)
+                
+                df_cut = df[df.shape[0] - len(predictions):] if i == 1 else df
+                df_index = df_cut.index if i == 1 else pd.date_range(start=start, periods=period, freq='D')
+                    
+                fig = get_figure(df_cut, ticker)
+                
                 fig.add_scatter(
-                    x=pd.date_range(
-                        start=start,
-                        periods=period,
-                        freq='D',
-                    ),
+                    x=df_index,
                     y=predictions,
                     mode='lines',
                     name='Predictions',
@@ -511,7 +516,8 @@ async def fit_or_predict(
                     selected_model=selected_model,
                     trend=selected_trend,
                     seasonal=selected_seasonal,
-                    seasonal_periods=seasonal_periods
+                    seasonal_periods=seasonal_periods,
+                    ticker=ticker
                 )
     else:
         st.header('Инференс модели 🔥')
@@ -522,6 +528,7 @@ async def fit_or_predict(
             key=f"delete_models{is_currency}"
         ):
             await delete_models()
+            st.rerun()
 
         selected_model = st.selectbox(
             'Выберите модель:',
@@ -541,7 +548,6 @@ async def fit_or_predict(
                 'Предсказать!',
                 key=f"predict{is_currency}"
             ) and selected_period:
-                print(data_type)
                 await set_active_model(model_id=selected_model, data_type=data_type)
                 await inference_model(
                     df=df,
@@ -592,7 +598,8 @@ async def create_template(
             with tab_fit:
                 await fit_or_predict(
                     template_type=f'fit_{template_type}',
-                    df=df[selected_ticker]
+                    df=df[selected_ticker],
+                    ticker=selected_ticker
                 )
 
             with tab_predict:
