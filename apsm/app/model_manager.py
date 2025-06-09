@@ -18,9 +18,7 @@ class ModelManager:
     transformers = None
     
     @staticmethod
-    def transform_data(data, ticker):
-        ModelManager.load_transformers()    
-
+    def transform_data(data, ticker, is_train=True):    
         df = pd.DataFrame({'value': data})
         df['Date'] = pd.date_range(start='2022-01-01', periods=len(data), freq='D')
       
@@ -28,7 +26,8 @@ class ModelManager:
        
         features['ticker'] = ticker
         
-        return preprocess_time_series(df=features, target='target', transformers=ModelManager.transformers)[0]
+        data, ModelManager.transformers = preprocess_time_series(df=features, target='target', is_train=is_train, transformers=ModelManager.transformers)
+        return data
     
     @staticmethod
     def load_transformers():

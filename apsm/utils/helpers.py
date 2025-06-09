@@ -14,7 +14,7 @@ def create_project_path() -> None:
     sys.path.append(project_path)
 
 
-def get_model_path(model_id: str, model_type: Optional[str] = None, data_type: Optional[str] = None) -> Optional[str]:
+def get_model_path(model_id: str, ticker: str, model_type: Optional[str] = None, data_type: Optional[str] = None) -> Optional[str]:
     """
     Возвращает путь к файлу модели по id и типу модели/данных, если файл существует.
 
@@ -32,9 +32,9 @@ def get_model_path(model_id: str, model_type: Optional[str] = None, data_type: O
     Optional[str]
         Путь к файлу модели или None, если не найден.
     """
-    auto_arima_path = os.path.join('models', 'auto_arima', model_id + '.joblib')
-    holt_winters_path = os.path.join('models', 'holt_winters', model_id + '.joblib')
-    catboost_path = os.path.join('models', 'catboost', model_id + '.joblib')
+    auto_arima_path = os.path.join('models', 'auto_arima', f'{model_id}_{ticker}' + '.joblib')
+    holt_winters_path = os.path.join('models', 'holt_winters', f'{model_id}_{ticker}' + '.joblib')
+    catboost_path = os.path.join('models', 'catboost', f'{model_id}_{ticker}' + '.joblib')
     
     if model_type == 'catboost' and model_id == 'catboost_pretrained':
         catboost_path = None

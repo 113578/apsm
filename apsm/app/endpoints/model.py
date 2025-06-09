@@ -78,7 +78,7 @@ async def fit(
     config = request.config.hyperparameters or {}
     data_type = request.config.data_type
 
-    model_path = get_model_path(model_id, model_type.value, data_type)
+    model_path = get_model_path(model_id, ticker, model_type.value, data_type)
 
     if model_path:
         logger.error("Модель '%s' уже существует.", model_id)
@@ -127,8 +127,8 @@ async def fit(
         elif model_type == ModelType.catboost:
             features = ModelManager.transform_data(data, ticker)
             X, y = features.drop("target", axis = 1), features["target"]
-            catboost_path = get_model_path(model_id, 'catboost', data_type)
             
+            catboost_path = get_model_path(model_id, ticker, 'catboost', data_type)
             ModelManager.model = CatBoostRegressor(
                 thread_count=-1,
                 verbose=0
@@ -142,7 +142,13 @@ async def fit(
             )
 
         os.makedirs(f'models/{model_type.value}', exist_ok=True)
-        joblib.dump(ModelManager.model, f'models/{model_type.value}/{model_id}.joblib')
+        joblib.dump(
+            {
+                "model": ModelManager.model,
+                "transformers": ModelManager.transformers if model_type == ModelType.catboost else None
+            },
+            f'models/{model_type.value}/{model_id}_{ticker}.joblib'
+        )
 
         logger.info("Модель '%s' успешно обучена и сохранена.", model_id)
 
@@ -214,8 +220,8 @@ async def predict_model(
                     status_code=400,
                     detail='Для CatBoost необходимо передать данные для предсказания.'
                 )
-            
-            features = ModelManager.transform_data(data, ticker).drop(["target"], axis = 1)
+    
+            features = ModelManager.transform_data(data, ticker, is_train=False).drop(["target"], axis = 1)
             
             max_periods = features.shape[0]
             n_periods = min(n_periods, max_periods)
@@ -283,18 +289,19 @@ async def list_models() -> ModelListResponse:
     """
     models_list = [
         {
-            'id': model_id.removesuffix('.joblib'),
-            'type': model_type.value
+            'id': "".join(info.split('_')[:-1]),
+            'type': model_type.value,
+            'ticker': info.split('_')[-1].removesuffix('.joblib')
         }
         for model_type in ModelType
         if os.path.exists(f'models/{model_type.value}')
-        for model_id in os.listdir(f'models/{model_type.value}')
+        for info in os.listdir(f'models/{model_type.value}')
     ]
 
     catboost_path = os.path.join('models', 'pretrained', 'classic', 'currency', 'cb.pkl')
 
     if os.path.exists(catboost_path):
-        models_list.append({'id': 'catboost_pretrained', 'type': 'catboost'})
+        models_list.append({'id': 'catboost_pretrained', 'type': 'catboost', 'ticker':'unknown'})
 
     return ModelListResponse(models=models_list)
 
@@ -327,16 +334,16 @@ async def set_active_model(
     HTTPException
         Если модель не найдена.
     """
-    model_id = request.id
+    model_id, ticker = request.id, request.ticker
     ModelManager.data_type = request.data_type
 
     if model_id == 'catboost_pretrained':
         model_type = 'catboost'
-        model_path = get_model_path(model_id, model_type, ModelManager.data_type)
+        model_path = get_model_path(model_id, ticker, model_type, ModelManager.data_type)
 
     else:
         model_type = None
-        model_path = get_model_path(model_id, model_type)
+        model_path = get_model_path(model_id, ticker, model_type)
 
     if not model_path:
         logger.error("Модель '%s' не найдена.", model_id)
@@ -349,9 +356,11 @@ async def set_active_model(
     if model_type == 'catboost':
         with open(model_path, 'rb') as f:
             ModelManager.model = pkl.load(f)
+            ModelManager.load_transformers()
 
     else:
-        ModelManager.model = joblib.load(model_path)
+        obj = joblib.load(model_path)
+        ModelManager.model, ModelManager.transformers = obj.values()
 
     logger.info('Модель %s активна.', model_id)
 

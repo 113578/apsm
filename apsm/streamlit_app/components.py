@@ -148,6 +148,7 @@ def get_figure(
     fig : plotly.graph_objs.Figure
         Объект графика для отображения.
     """
+    df = df.iloc[:-1]
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -188,7 +189,6 @@ async def inference_model(
         Отображает график предсказаний или сообщение об ошибке в интерфейсе Streamlit.
     """
     url = f'{base_url}/predict'
-
     payload = {
         'n_periods': period,
         'data': df[ticker].values.tolist(),
@@ -209,6 +209,7 @@ async def inference_model(
             if response.status_code == 200:
                 predictions = response.json()['forecast']
                 st.subheader('Результаты предсказания' + (" на обучающей выборке" if i == 1 else ""))
+                
                 
                 df_cut = df[df.shape[0] - len(predictions):] if i == 1 else df
                 df_index = df_cut.index if i == 1 else pd.date_range(start=start, periods=period, freq='D')
@@ -406,7 +407,7 @@ def select_ticker(
     return None
 
 
-async def set_active_model(model_id: str, data_type: str) -> None:
+async def set_active_model(model_id: str, ticker: str, data_type: str) -> None:
     """
     Установка активной модели на сервере.
 
@@ -423,6 +424,7 @@ async def set_active_model(model_id: str, data_type: str) -> None:
     url = f'{base_url}/set'
     payload = {
         'id': model_id,
+        'ticker': ticker,
         'data_type': data_type
     }
 
@@ -510,7 +512,7 @@ async def fit_or_predict(
                 key=f"fit_model{is_currency}"
             ):
                 await train_model(
-                    df=df,
+                    df=df[:int(len(df)*0.7)],
                     model_id=model_id,
                     data_type=data_type,
                     selected_model=selected_model,
@@ -543,14 +545,14 @@ async def fit_or_predict(
                     key=f"period{is_currency}"
                 )
             )
-
+            
             if st.button(
                 'Предсказать!',
                 key=f"predict{is_currency}"
             ) and selected_period:
-                await set_active_model(model_id=selected_model, data_type=data_type)
+                await set_active_model(selected_model, ticker, data_type)
                 await inference_model(
-                    df=df,
+                    df=df[int(len(df)*0.7):] if selected_model != "catboost_pretrained" else df,
                     ticker=ticker,
                     period=int(selected_period)
                 )

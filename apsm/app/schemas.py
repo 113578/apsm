@@ -59,6 +59,7 @@ class StatusResponse(BaseModel):
 
 class SetRequest(BaseModel):
     id: str
+    ticker: str
     data_type: str
 
 
