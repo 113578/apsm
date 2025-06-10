@@ -1,58 +1,62 @@
-## Описание структуры проекта
+# Описание структуры проекта
 <pre>
-├── apsm #Основная директория проекта, содержащая код приложения  
-│     ├── app #FastApi приложение  
-│     │     ├── Dockerfile #Docker-образ для FastApi приложения  
-│     │     ├── endpoints  
-│     │     │     ├── __init__.py  
-│     │     │     └── model.py  
-│     │     ├── main.py  
-│     │     └── schemas.py  
-│     ├── Dockerfile # Dockerfile для создания образа приложения с установкой зависимостей из requirements.txt и настройкой рабочего каталога  
-│     ├── streamlit_app #streamlit-приложение  
-│     │     ├── components.py #весь функционал Streamlit-приложения   
-│     │     ├── Dockerfile ##Docker-образ для Streamlit приложения  
-│     │     └── main.py #файл для запуска Streamlit-приложения   
-│     └── utils # Утилитарные функции, используемые в проекте  
-│         ├── helpers.py # Вспомогательные функции, которые могут использоваться в разных частях приложения  
-│         ├── __init__.py # Инициализация модуля утилит с импортом функций для логирования и работы с путями проекта  
-│         ├── linters #  Скрипты для запуска линтеров  
-│         │     ├── run_linters_docker.sh  
-│         │     ├── run_linters_python.sh  
-│         │     └── run_linters_sh.sh  
-│         └── logger.py #Логирование ошибок и сообщений в систему  
-├── docker-compose.yml  #Файл конфигурации для Docker Compose
+├── apsm
+│   ├── app
+│   │   ├── data_preprocessing.py  
+│   │   ├── Dockerfile 
+│   │   ├── endpoints  
+│   │   │   ├── __init__.py  
+│   │   │   └── model.py  
+│   │   ├── main.py  
+│   │   └── schemas.py  
+│   ├── Dockerfile
+│   ├── streamlit_app #streamlit-приложение  
+│   │   ├── components.py 
+│   │   ├── Dockerfile
+│   │   └── main.py
+│   └── utils
+│       ├── helpers.py 
+│       ├── __init__.py 
+│       ├── linters #  Скрипты для запуска линтеров  
+│       │   ├── run_linters_docker.sh  
+│       │   ├── run_linters_python.sh  
+│       │   └── run_linters_sh.sh  
+│       └── logger.py
+├── docker-compose.yml
 ├── info  # Директория с документацией по проекту
-│     ├── checkpoints.md  
-│     └── dataset.md  
-│    
-├── LICENSE  # Файл с лицензией проекта, описывающий условия использования
-├── logs  # Директория для логов приложения
-│     ├── api.log  
-│     └── streamlit.log  
+│   ├── checkpoints.md  
+│   ├── dataset.md  
+│   └── gifs
+│       └── instruction.gif
+├── LICENSE
 ├── models  # Модели машинного обучения
-│     ├── auto_arima  
-│     │     ├── 1.joblib  
-│     │     └── 2.joblib  
-│     └── holt_winters  
-├── notebooks  #Директория с Jupyter-ноутбуками
-│     ├── EDA  # Директория с EDA
-│     │     ├── EDA.ipynb  
-│     │     └── EDA_ts.ipynb  
-│     ├── modeling  # Директория с 
-│     │     ├── sentiment_analysis.ipynb  
-│     │     └── ts_baseline.ipynb  
-│     └── parsing  # Ноутбуки для парсинга новостей и котировок из разных источников
-│         ├── currency.ipynb  
-│         ├── news_alphavantage.ipynb  
-│         └── news_lenta.ipynb  
+│   ├── pretrained
+│   │   └── classic
+│   │       ├── currency
+│   │       │   └── cb.pkl
+│   │       └── stock
+│   │           └── cb.pkl
+│   └── transformers
+│       ├── currency.pkl
+│       └── stock.pkl
+├── notebooks
+│   ├── EDA
+│   │   ├── EDA.ipynb  
+│   │   └── EDA_ts.ipynb  
+│   ├── modeling
+│   │   ├── non_linear_models_analysis.ipynb  
+│   │   ├── sentiment_analysis.ipynb  
+│   │   └── ts_baseline.ipynb  
+│   └── parsing  # Ноутбуки для парсинга новостей и котировок из разных источников
+│       ├── currency.ipynb  
+│       ├── news_alphavantage.ipynb  
+│       └── news_lenta.ipynb  
 ├── README.md  # Документация проекта, описание его целей, установочных инструкций и основных функций.
 ├── report.md  # Техническая документация проекта, с описанием ручек и функционала streamlit-приложения
-└── requirements.txt # Список зависимостей Python, которые необходимы для работы проекта
+└── requirements.txt 
 </pre>
 
-## Описание функционала api
-
+# Описание функционала API
 1. /fit — Обучение модели
 Метод: POST
 Описание: Обучает модель на основе предоставленных данных и параметров.
@@ -89,7 +93,7 @@ request (тип: SetRequest): запрос, содержащий идентиф�
 6. Логирование  
 Все операции логируются в файл для отслеживания ошибок и успешных действий.
 
-##  Функционал streamlit-приложения:
+# Функционал streamlit-приложения:
 1. Загрузка и очистка данных — позволяет загружать файлы с котировками валют или акций, очищая их для анализа.
 2. Выбор тикера — позволяет выбрать тикер для анализа из загруженных данных.
 3. Обучение модели — обучает модель прогнозирования (например, Holt-Winters или Auto-ARIMA) с указанными параметрами.

@@ -19,12 +19,12 @@ app.include_router(router=model_router)
 )
 async def root() -> StatusResponse:
     """
-    Возвращает статус работы API.
+    Возвращает статус работы API (сообщение об успешной работе).
 
     Returns
     -------
     StatusResponse
-        Сообщение о статусе API.
+        Сообщение о статусе API (ключ 'message').
     """
     return StatusResponse(
         response={

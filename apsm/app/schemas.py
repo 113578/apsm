@@ -3,7 +3,7 @@ from typing import (
     List,
     Dict,
     Optional,
-    Union
+    Union,
 )
 
 from pydantic import BaseModel
@@ -12,11 +12,13 @@ from pydantic import BaseModel
 class ModelType(str, Enum):
     auto_arima = 'auto_arima'
     holt_winters = 'holt_winters'
+    catboost = 'catboost'
 
 
 class ModelConfig(BaseModel):
     id: str
     ml_model_type: ModelType
+    data_type: str
     hyperparameters: Optional[
         Dict[str, Union[str, bool, int, float]]
     ] = None
@@ -25,6 +27,7 @@ class ModelConfig(BaseModel):
 class FitRequest(BaseModel):
     data: List[float]
     config: ModelConfig
+    ticker: str
 
 
 class FitResponse(BaseModel):
@@ -34,6 +37,8 @@ class FitResponse(BaseModel):
 class PredictRequest(BaseModel):
     n_periods: int
     future_forecast: bool = True
+    data: List[float]
+    ticker: str
 
 
 class PredictResponse(BaseModel):
@@ -54,6 +59,8 @@ class StatusResponse(BaseModel):
 
 class SetRequest(BaseModel):
     id: str
+    ticker: str
+    data_type: str
 
 
 class SetResponse(BaseModel):
@@ -66,7 +73,3 @@ class LoadRequest(BaseModel):
 
 class LoadResponse(BaseModel):
     message: str
-
-
-class ModelManager(BaseModel):
-    model: str = None

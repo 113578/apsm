@@ -36,4 +36,3 @@ services:
         volumes:
             - ./logs:/usr/src/app/logs
             - ./models:/usr/src/app/models
-

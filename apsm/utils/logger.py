@@ -5,20 +5,25 @@ from logging.handlers import RotatingFileHandler
 
 def setup_logger(name: str, log_file: str):
     """
-    Установка логгера с именем и названием файла с логами.
+    Создаёт и настраивает логгер с именем name, который пишет в файл log_file и в консоль.
 
     Parameters
     ----------
     name : str
         Имя логгера.
     log_file : str
-        Название файла с логами.
+        Путь к файлу для логов.
+
+    Returns
+    -------
+    logging.Logger
+        Настроенный логгер.
     """
     os.makedirs(
-        os.getenv('PYTHONPATH') + '/logs', 
+        os.getenv('PYTHONPATH') + '/logs',
         exist_ok=True
     )
-    
+
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
